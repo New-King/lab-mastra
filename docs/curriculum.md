@@ -1,6 +1,6 @@
-# 第二季课表（Mastra）
+# 本课程课表（Mastra）
 
-主线 **14 课** + 进阶 **5 课**。设计原则：一个学员项目覆盖式演进；前端沿用第一季；每课有可验证的验收标准。
+主线 **14 课** + 进阶 **5 课**。设计原则：一个学员项目覆盖式演进；前端沿用 lab-ai-sdk；每课有可验证的验收标准。
 
 - 站点 UI / 结构 / 数据文件形状：与 `lab-ai-sdk` 一致
 - 学员项目：`my-mastra-app`（`pnpm create mastra@latest`），逐课叠加
@@ -16,7 +16,7 @@
 | 3 | 工具与结构化输出 | `createTool`、Structured Output、RequestContext | 阶段 2 | — |
 | 4 | 记忆（一）：会话与工作记忆 | Message History、Working Memory、Storage | 阶段 1 | — |
 | 5 | 记忆（二）：语义召回与多用户 | Semantic Recall、Observational Memory、Processors、Multi-User Threads | **未覆盖（我们补）** | — |
-| 6 | 接自己的前端 | `@mastra/ai-sdk` 的 `chatRoute()`、Server、Client | **未覆盖（我们补）** | 复用第一季第 5 / 7 课 |
+| 6 | 接自己的前端 | `@mastra/ai-sdk` 的 `chatRoute()`、Server、Client | **未覆盖（我们补）** | 复用lab-ai-sdk 第 5 / 7 课 |
 | 7 | 工作流（一）：把问答变成流程 | Workflow State、Control Flow、Agents & Tools | 阶段 3 | 复用第 6 课页面 |
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
 | 9 | 工作流（三）：容错与定时 | Error Handling、Scheduled Workflows、Background Tasks、Schedules | 部分（模板有定时） | — |
@@ -80,9 +80,9 @@
 
 ### 第 6 课 · 接自己的前端（AI SDK UI）
 
-- **目标**：用 `chatRoute()` 暴露 POST 端点，把**第一季的前端页面**接上；前端一行不改
+- **目标**：用 `chatRoute()` 暴露 POST 端点，把**lab-ai-sdk 的前端页面**接上；前端一行不改
 - **能力**：`@mastra/ai-sdk`（`chatRoute` / `handleChatStream` / `toAISdkStream`）、Server、Mastra Client
-- **前端复用**：第一季第 5 课（工具 → 卡片）、第 7 课（`data-*` 来源卡片）
+- **前端复用**：lab-ai-sdk 第 5 课（工具 → 卡片）、第 7 课（`data-*` 来源卡片）
 - **验收**：网页上能聊天，工具调用渲染成卡片，刷新后历史还在
 - **文档**：`/integrations/agentic-ui/ai-sdk-ui`、`/reference/ai-sdk/chat-route`、`/docs/server/mastra-client`
 

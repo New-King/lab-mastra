@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Mastra Lab",
-  description: "Mastra 核心能力交互式学习（第二季）",
+  description: "Mastra 核心能力交互式学习",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

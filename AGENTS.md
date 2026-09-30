@@ -1,12 +1,12 @@
 # AGENTS.md — lab-mastra 维护规则
 
-第二季课程（Mastra 版）的约定。改这个仓库前先读本文件；与 `docs/curriculum.md` 冲突时以本文件为准。
+Mastra 课程（lab-mastra）的约定。改这个仓库前先读本文件；与 `docs/curriculum.md` 冲突时以本文件为准。
 
 ## 一、信息架构
 
 - **左侧菜单 = 主线课 + 进阶课**，顺序见 `docs/curriculum.md`（主线 12 课，进阶 5 课）。
 - 每课页 = 跟做步骤 + 知识点 + 文件 + 代码 + 右侧官方文档（`docLinks`），可选「延伸阅读」弹窗。
-- 站点结构、组件、布局 class 与 `lab-ai-sdk` **保持一致**：`app/`、`components/`、`lib/layout-classes.ts` 直接复用第一季；数据文件沿用同名 `lib/projects.ts`（`INIT_STEPS` / `NAV_ITEMS` / 类型与辅助函数）与 `lib/home.ts`。
+- 站点结构、组件、布局 class 与 `lab-ai-sdk` **保持一致**：`app/`、`components/`、`lib/layout-classes.ts` 直接复用 lab-ai-sdk；数据文件沿用同名 `lib/projects.ts`（`INIT_STEPS` / `NAV_ITEMS` / 类型与辅助函数）与 `lib/home.ts`。
 
 ## 二、知识点规则
 
@@ -24,7 +24,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 ## 三、前端不重学
 
-第二季的 Web UI **沿用第一季**（`useChat`、`message.parts`、`tool-*` / `data-*` part 渲染）。第二季知识点只讲 Mastra 侧；讲前端时用一句话指回第一季，不重复展开。目的是让学员看到「同一个前端，后端换成 Mastra」。
+本课程的 Web UI **沿用 lab-ai-sdk**（`useChat`、`message.parts`、`tool-*` / `data-*` part 渲染）。本课程知识点只讲 Mastra 侧；讲前端时用一句话指回 lab-ai-sdk，不重复展开。目的是让学员看到「同一个前端，后端换成 Mastra」。
 
 ## 四、覆盖式演进（学员项目）
 
@@ -48,7 +48,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 - 模型统一 **DeepSeek**：`model: "deepseek/deepseek-flash"` + `DEEPSEEK_API_KEY`；不要为了示例引入其他 provider（要讲多模型/fallback 时单独说明可选 provider）。
 - 存储用**本地 libSQL**（`file:./mastra.db`），不要默认上云服务（Turso 只在「部署」课作为可选说明）。
-- 依赖只加课程真需要的包（`@mastra/core`、`@mastra/ai-sdk`、`zod`）；**不要在 Mastra 项目里混装 AI SDK 的包**，除非该课确实要接第一季的前端。
+- 依赖只加课程真需要的包（`@mastra/core`、`@mastra/ai-sdk`、`zod`）；**不要在 Mastra 项目里混装 AI SDK 的包**，除非该课确实要接 lab-ai-sdk 的前端。
 - 示例代码写**中文注释**讲关键行为；知识点列表只列名称，注释解释用法。
 - 工具必须用 `createTool()`（不要用裸对象），`execute` 签名是 `execute(input, context)`。
 
@@ -56,7 +56,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 - 只挂 **Mastra 官方文档**（`https://mastra.ai/docs/...`），一课 3~5 条，与当课能力一一对应。
 - 每次改动后**批量校验 HTTP 200**（Mastra 文档路径变动频繁）。
-- 第一季的 AI SDK 文档只在「接自己的前端」一课挂 1 条（`@ai-sdk/react` 的 useChat 参考）。
+- AI SDK 的文档只在「接自己的前端」一课挂 1 条（`@ai-sdk/react` 的 useChat 参考）。
 
 ## 七、版本与时效
 
@@ -70,7 +70,7 @@ Mastra 迭代快，API 变动频繁：
 
 1. 该课代码在学员项目里能**跑通**（Studio 里能看到效果），并有可验证的「验收标准」。
 2. 新增 API / 概念是否已写进该课知识点，并挂上对应官方文档？
-3. 是否与第一季的 UI 结构一致（组件、布局 class、数据文件形状）？
+3. 是否与 lab-ai-sdk 的 UI 结构一致（组件、布局 class、数据文件形状）？
 4. `docLinks` 是否全部 200？
 5. 是否误引了其他 provider / 云服务 / AI SDK 包？
 6. lint / build 是否通过？

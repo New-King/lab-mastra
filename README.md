@@ -1,13 +1,13 @@
-# lab-mastra（第二季：Mastra 项目制课程）
+# lab-mastra（Mastra 项目制课程）
 
-和 `lab-ai-sdk`（第一季）配套的进阶课程站点。
+Mastra 版的课程站点，站点结构、UI 与数据文件形状和 `lab-ai-sdk` 保持一致。
 
-- **第一季 `lab-ai-sdk`**：AI SDK 的轻量面 + 前端（Core 的 `generateText` / `streamText` / `tool` / 结构化输出，UI 的消息流协议与 hooks）。
-- **第二季 `lab-mastra`（本项目）**：同一个前端，后端换成 Mastra —— 覆盖 Agent / Workflow / Memory / RAG / Evals / Observability / 上线部署等重编排与工程化能力。
+- `lab-ai-sdk`：AI SDK 的轻量面 + 前端（Core 的 `generateText` / `streamText` / `tool` / 结构化输出，UI 的消息流协议与 hooks）。
+- `lab-mastra`（本项目）：同一个前端，后端换成 Mastra —— 覆盖 Agent / Workflow / Memory / RAG / Evals / Observability / 上线部署等重编排与工程化能力。
 
-## 与第一季的关系（教学连贯性）
+## 和 AI SDK 的关系
 
-前端**不重学**。第二季的 Web UI 直接沿用第一季已经做过的 `useChat` + `parts` 渲染 + `tool-*` / `data-*` part，只是后端从「自己写的 `app/api/generate/route.ts`」换成「Mastra 的 agent + `chatRoute()`」。
+前端**不重学**。本课程的 Web UI 直接沿用 `lab-ai-sdk` 里已经做过的 `useChat` + `parts` 渲染 + `tool-*` / `data-*` part，只是后端从「自己写的 `app/api/generate/route.ts`」换成「Mastra 的 agent + `chatRoute()`」。
 
 学员的感知应该是：**还是那个页面，后端升级了** —— 这样才能讲清"什么时候该上框架"。
 
@@ -49,7 +49,7 @@ lab-mastra/
 
 ## 技术栈
 
-- 站点：Next.js（App Router）+ Tailwind + shiki（与第一季一致）
+- 站点：Next.js（App Router）+ Tailwind + shiki（与 lab-ai-sdk 一致）
 - 课程主体：`@mastra/core`、`@mastra/ai-sdk`、`zod`、DeepSeek（`DEEPSEEK_API_KEY`，模型 `deepseek/deepseek-flash`）
 - 本地存储：`file:./mastra.db`（libSQL），调试用 Mastra Studio（`localhost:4111`）
 

@@ -89,7 +89,7 @@
 
 | 我们补的能力 | 课 |
 |---|---|
-| **接自己的前端**（`chatRoute()` + AI SDK UI，复用第一季页面） | 第 6 课 |
+| **接自己的前端**（`chatRoute()` + AI SDK UI，复用 lab-ai-sdk 页面） | 第 6 课 |
 | Semantic Recall / Observational Memory / Memory Processors / 多用户线程隔离 | 第 5 课 |
 | 定时任务与后台任务（Scheduled Workflows / Background Tasks / Schedules） | 第 9 课 |
 | Guardrails 与 Processors（注入防护、输出脱敏） | 第 13 课 |
