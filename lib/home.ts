@@ -35,10 +35,22 @@ export const HOME = {
       ],
     },
     {
-      title: "和 AI SDK 的关系",
+      title: "和 AI SDK 的区别与关系",
       paragraphs: [
-        "AI SDK 讲的是轻量面：Core 的调用，以及 UI 的消息流协议、hooks 与前端渲染（见 lab-ai-sdk）。",
-        "这里用同一个前端，把后端换成 Mastra —— 能记、能编排、能审批、能容错、能评测。前端页面一行都不用改，这样才能看清「什么时候该上框架」。",
+        "两者是同一件事的两层，不是二选一：AI SDK 是 SDK —— 服务端（Core）发请求，UI 端（消费端）接流渲染；Mastra 是框架 —— 管运行状态、多步编排、审批、容错与评测；不提供前端渲染层。",
+        "Mastra 支持 AI SDK：@mastra/ai-sdk 的 chatRoute() 把 agent 输出成 AI SDK 的消息流（第 6 课）。",
+      ],
+      bullets: [
+        "AI SDK（见 lab-ai-sdk）— 服务端 Core（generateText / streamText / generateObject）+ UI 端（消息流协议、hooks 与前端渲染）。",
+        "Mastra（本 Lab）— Agent / Workflow / Memory / RAG / Evals / Observability，对应记忆、编排、审批、容错、评测。",
+      ],
+    },
+    {
+      title: "什么时候不要用 Mastra",
+      bullets: [
+        "只有一问一答的聊天：AI SDK 的 agent 循环就够了，加一层框架是负担。",
+        "固定两三步的链：两次 await 就串完了，不值得为它定义 Workflow。",
+        "判断线：功能里出现「状态、多步、恢复、人工介入、观测、评测」两个以上，框架才开始划算。",
       ],
     },
     {
@@ -46,14 +58,6 @@ export const HOME = {
       paragraphs: [
         "项目驱动：在独立的 Mastra 项目 my-mastra-app 里逐课叠加能力，Lab 提供步骤、代码与官方文档对照。",
         "学习路径：初始化 → Agent 与模型 → 工具与结构化输出 → 记忆 → 接自己的前端 → 工作流（编排 / 暂停恢复 / 容错定时）→ RAG → 评测 → 观测 → 安全与上线。",
-      ],
-    },
-    {
-      title: "什么时候不要用 Mastra",
-      bullets: [
-        "只有一问一答的聊天：AI SDK 的 agent 循环就够了，加一层框架是负担。",
-        "固定两三步的链：直接 await 两次更省事。",
-        "判断线：功能里出现「状态、多步、恢复、人工介入、观测、评测」两个以上，框架才开始划算。",
       ],
     },
   ] satisfies HomeSection[],

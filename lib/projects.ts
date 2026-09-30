@@ -106,6 +106,8 @@ export type GuideProject = {
   kind: "guide";
   slug: string;
   title: string;
+  /** 可选：整课交给编码助手执行的提示词（与下面的命令步骤等价） */
+  agentPrompt?: string;
   files: ProjectFile[];
   docLinks: DocLink[];
 };
@@ -172,6 +174,15 @@ export const NAV_ITEMS: NavItem[] = [
     kind: "guide",
     slug: "getting-started",
     title: "初始化",
+    agentPrompt: `在本机创建一个 Mastra 项目，严格按下面步骤执行，不要自行发挥：
+
+1. 执行 pnpm create mastra@latest ${PROJECT_DIR}，交互项全部按回车用默认值
+2. 进入项目目录，新建 .env，写入 DEEPSEEK_API_KEY=（先向我索要，不要编造）
+3. 确认 src/mastra/agents 里的 agent 使用 model: "deepseek/deepseek-flash"
+4. 启动 pnpm dev，把 Studio 地址（http://localhost:4111）告诉我，并说明第一步该点哪里验收
+
+限制：不引入其他模型 provider、云服务或额外依赖；不改动上述范围之外的文件。
+完成后列出改动过的文件清单。`,
     docLinks: [
       { title: "Get started", href: "https://mastra.ai/docs" },
       { title: "Mastra Studio", href: "https://mastra.ai/docs/studio/overview" },

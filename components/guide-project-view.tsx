@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AgentPrompt } from "@/components/agent-prompt";
 import { CodePanel } from "@/components/code-panel";
 import { DocLinksSidebar } from "@/components/doc-links-sidebar";
 import {
@@ -25,6 +26,8 @@ export function GuideProjectView({ project }: { project: GuideProject }) {
           <header className="mb-6">
             <h1 className="text-2xl font-semibold tracking-tight">{project.title}</h1>
           </header>
+
+          {project.agentPrompt && <AgentPrompt prompt={project.agentPrompt} />}
 
           <div className={labFileGrid}>
             <FileList

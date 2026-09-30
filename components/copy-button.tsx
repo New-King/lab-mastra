@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
 
-function IconCopy({ className }: { className?: string }) {
+export function IconCopy({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
       <rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" />
@@ -16,7 +16,7 @@ function IconCopy({ className }: { className?: string }) {
   );
 }
 
-function IconCheck({ className }: { className?: string }) {
+export function IconCheck({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
       <path
@@ -26,6 +26,16 @@ function IconCheck({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+export function IconFailed({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7.6v5.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 16.4v.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -56,7 +66,7 @@ export function CopyButton({ text }: { text: string }) {
       {state === "copied" ? (
         <IconCheck className="h-4 w-4 text-emerald-400" />
       ) : state === "failed" ? (
-        <span className="text-[10px] leading-none text-red-400">!</span>
+        <IconFailed className="h-4 w-4 text-red-400" />
       ) : (
         <IconCopy className="h-4 w-4" />
       )}
