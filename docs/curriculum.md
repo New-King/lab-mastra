@@ -3,7 +3,7 @@
 主线 **14 课** + 进阶 **5 课**。设计原则：一个学员项目覆盖式演进；前端沿用 lab-ai-sdk；每课有可验证的验收标准。
 
 - 站点 UI / 结构 / 数据文件形状：与 `lab-ai-sdk` 一致
-- 学员项目：`my-mastra-app`（`pnpm create mastra@latest`），逐课叠加
+- 学员项目：`my-mastra-app`（Next 一体化：`npx create-next-app` + `npx --force mastra@latest init`），逐课叠加
 - 模型：DeepSeek（`deepseek/deepseek-flash`）；存储：本地 libSQL（`file:./mastra.db`）
 - 每课记录「验证时使用的 Mastra 版本」（Mastra 迭代快）
 
@@ -11,7 +11,7 @@
 
 | # | 课 | 核心能力（Mastra 侧） | 参考仓库对应阶段 | 前端 |
 |---|---|---|---|---|
-| 1 | 初始化 | Mastra 实例 / Studio / Model Router | 起步 | — |
+| 1 | 初始化 | Next 一体化脚手架 / Mastra 实例 / Studio / Model Router | 起步 | 前端项目就位（`app/`） |
 | 2 | Agent 与模型 | Agent、instructions、Model Router、Fallback | 阶段 1（部分） | — |
 | 3 | 工具与结构化输出 | `createTool`、Structured Output、RequestContext | 阶段 2 | — |
 | 4 | 记忆（一）：会话与工作记忆 | Message History、Working Memory、Storage | 阶段 1 | — |
@@ -44,11 +44,16 @@
 
 ### 第 1 课 · 初始化（guide 类型）
 
-- **目标**：跑通脚手架 + Studio，能在浏览器里跟 agent 对话
-- **命令**：`pnpm create mastra@latest` → `cd` → `.env` 填 `DEEPSEEK_API_KEY` → `pnpm dev` → `localhost:4111`
+- **目标**：跑通 Next 一体化项目（前端 `app/` + Mastra `src/mastra/`），Studio 里能看到示例 agent
+- **命令**（官方 Next.js 指南的写法）：
+  - `npx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
+  - `cd my-mastra-app && npx --force mastra@latest init`（生成 `src/mastra/`，含示例 agent / 工具；provider 任选，脚手架列表里没有 DeepSeek）
+  - `.env` 补 `DEEPSEEK_API_KEY`（`init` 已按所选 provider 写了一份，保留即可）
+  - `npx mastra dev` → Studio `http://localhost:4111`；另开一个终端 `npm run dev` → 应用 `http://localhost:3000`
 - **知识点**：Mastra 实例、Studio、Model Router（`provider/model` 字符串）
-- **验收**：Studio → Agents → 选到 agent，发一句话得到回答
-- **文档**：`/docs.md`（Get Started）、`/docs/studio/overview`、`/models/providers/deepseek`
+- **验收**：Studio 打开并看到示例 agent；两个 dev 命令互不干扰
+- **文档**：`/guides/getting-started/next-js`、`/docs/studio/overview`、`/models/providers/deepseek`
+- **待验证**：官方 Next.js 指南页**没提 Studio**，`mastra dev` 与 `next dev` 在同一项目里并存需首次实跑确认；另 `create-mastra` 参考页的部分参数（`--default` / `--components` / `--dir` / `--mcp`）在已发布版本里不存在，写课时以本机 `--help` 为准
 
 ### 第 2 课 · Agent 与模型
 
@@ -80,9 +85,11 @@
 
 ### 第 6 课 · 接自己的前端（AI SDK UI）
 
-- **目标**：用 `chatRoute()` 暴露 POST 端点，把**lab-ai-sdk 的前端页面**接上；前端一行不改
+- **目标**：把**lab-ai-sdk 的前端页面**接上（页面粘过来即用）；前端一行不改
+- **依赖**：首次装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装**官方 Next.js 指南推荐的 `ai-elements`
 - **能力**：`@mastra/ai-sdk`（`chatRoute` / `handleChatStream` / `toAISdkStream`）、Server、Mastra Client
-- **前端复用**：lab-ai-sdk 第 5 课（工具 → 卡片）、第 7 课（`data-*` 来源卡片）
+- **端点写法（待定）**：官方 Next.js 指南用 `handleChatStream()` + `createUIMessageStreamResponse()`；reference 里另有 `chatRoute()`。二者选一后在课里统一（会影响 AGENTS / README 的措辞）
+- **前端复用**：lab-ai-sdk 第 5 课（工具 → 卡片）、第 7 课（`data-*` 来源卡片）；页面放**根 `app/`**
 - **验收**：网页上能聊天，工具调用渲染成卡片，刷新后历史还在
 - **文档**：`/integrations/agentic-ui/ai-sdk-ui`、`/reference/ai-sdk/chat-route`、`/docs/server/mastra-client`
 

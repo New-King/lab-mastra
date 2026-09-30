@@ -36,7 +36,8 @@ lab-mastra/
 ## 学员项目的演进方式（覆盖式）
 
 ```text
-第 1 课  pnpm create mastra@latest my-mastra-app   → src/mastra/index.ts、agents/agent.ts
+第 1 课  npx create-next-app + npx --force mastra@latest init
+        → app/（前端，根目录）+ src/mastra/（agent、工具、index.ts）
 第 2 课  覆盖 agents/*.ts（instructions、模型路由）
 第 3 课  新增 tools/*.ts + 覆盖 agent
 第 4~5 课 覆盖 agent 的 memory 配置
@@ -50,7 +51,8 @@ lab-mastra/
 ## 技术栈
 
 - 站点：Next.js（App Router）+ Tailwind + shiki（与 lab-ai-sdk 一致）
-- 课程主体：`@mastra/core`、`@mastra/ai-sdk`、`zod`、DeepSeek（`DEEPSEEK_API_KEY`，模型 `deepseek/deepseek-flash`）
+- 课程主体：Next.js（App Router，前端在**根 `app/`**）+ `@mastra/core`、`@mastra/ai-sdk`、`zod`、DeepSeek（`DEEPSEEK_API_KEY`，模型 `deepseek/deepseek-flash`）
+- 第 6 课起：加 `@ai-sdk/react` + `ai` 以复用 lab-ai-sdk 的前端；**不装**官方 Next.js 指南推荐的 `ai-elements`
 - 本地存储：`file:./mastra.db`（libSQL），调试用 Mastra Studio（`localhost:4111`）
 
 ## 开发
@@ -62,6 +64,9 @@ pnpm dev          # 站点
 
 ## 待办
 
+- [ ] **实跑确认**：Next 一体化下 `npx mastra dev`（Studio 4111）与 `npm run dev`（应用 3000）能否并存（官方 Next.js 指南未提 Studio）
+- [ ] **定端点写法**：官方 Next.js 指南用 `handleChatStream()` + `createUIMessageStreamResponse()`，reference 另有 `chatRoute()`；第 6 课二选一后统一 AGENTS / README / 课表措辞
+- [ ] **验参数写法**：第 1 课命令里的 `--no-react-compiler` / `--no-import-alias` 没出现在 `create-next-app --help` 里（只有正向的 `--react-compiler`、`--import-alias <prefix/*>`），可能报 `unknown option`；若如此，页面与提示词一起改
 - [ ] 按 `docs/curriculum.md` 写各课内容（先第 1~3 课）
 - [ ] 站点脚手架（照抄 lab-ai-sdk 的 components / layout-classes）
 - [ ] 学员项目模板（每课「跟做」需要的最终代码）

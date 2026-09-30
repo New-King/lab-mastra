@@ -64,7 +64,7 @@ export const HOME = {
   stack: {
     title: "本教程技术栈",
     items: [
-      { label: "框架", value: "Mastra（@mastra/core）" },
+      { label: "框架", value: "Next.js（App Router）+ Mastra（@mastra/core）" },
       { label: "语言", value: "TypeScript" },
       { label: "模型提供商", value: "DeepSeek（deepseek-flash，走 Model Router）" },
       { label: "本地存储", value: "libSQL（file:./mastra.db）" },
