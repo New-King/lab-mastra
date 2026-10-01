@@ -25,6 +25,12 @@ export type FollowStep = {
   command: string;
 };
 
+/** 课末的验收步骤：去哪儿看、看到什么算通过（每项一行） */
+export type ProjectVerify = {
+  label: string;
+  description: string[];
+};
+
 export type LabOperation =
   | {
       kind: "scaffold";
@@ -33,6 +39,13 @@ export type LabOperation =
       label: string;
       description: string;
       command: string;
+    }
+  | {
+      kind: "check";
+      id: "verify";
+      order: number;
+      label: string;
+      description: string[];
     }
   | {
       kind: "file";
@@ -68,8 +81,11 @@ export function buildScaffoldCommand(files: ProjectFile[]): string | null {
   return parts.join(" && ");
 }
 
-/** 操作列表：创建文件 → 逐文件粘贴代码 */
-export function getLabOperations(files: ProjectFile[]): LabOperation[] {
+/** 操作列表：创建文件 → 逐文件粘贴代码 → 验收 */
+export function getLabOperations(
+  files: ProjectFile[],
+  verify?: ProjectVerify,
+): LabOperation[] {
   const sorted = [...files]
     .filter((file) => file.order != null && file.action != null)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -99,6 +115,16 @@ export function getLabOperations(files: ProjectFile[]): LabOperation[] {
     });
   }
 
+  if (verify) {
+    operations.push({
+      kind: "check",
+      id: "verify",
+      order: order++,
+      label: verify.label,
+      description: verify.description,
+    });
+  }
+
   return operations;
 }
 
@@ -124,6 +150,8 @@ export type LabProject = {
   slug: string;
   title: string;
   summary: string;
+  /** 可选：课末验收步骤（操作列表的最后一项） */
+  verify?: ProjectVerify;
   concepts: string[];
   /** 可选：知识点旁的延伸阅读 */
   conceptArticle?: ConceptArticle;
@@ -170,7 +198,7 @@ export const INIT_STEPS: CommandStep[] = [
     command: "rm -rf .git",
   },
   {
-    description: "启动 Studio（Mastra 调试界面）：http://localhost:4111。",
+    description: "启动 Studio，打开 Agents 页：http://localhost:4111/agents。",
     command: "pnpm exec mastra dev",
   },
   {
@@ -249,13 +277,20 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
     slug: "agent-and-model",
     title: "Agent 与模型",
     summary:
-      "定义一个自己的 agent：id、name、instructions、model，注册到 Mastra 入口，在 Studio 和命令行里跑起来。",
+      "定义一个自己的 agent：id、name、instructions、model，注册到 Mastra 入口，然后在 Studio 的 Agents 页（http://localhost:4111/agents）跟它对话。",
+    verify: {
+      label: "去 Studio 对话",
+      description: [
+        "打开 http://localhost:4111/agents，选 my-agent",
+        "问「你好」→ 中文、简短回答",
+        "问「请用英文详细回答」→ 它拒绝，说明 instructions 生效",
+      ],
+    },
     concepts: [
       "Agent — 一个 agent 就是 id、name 和 instructions，加上 model，用 new Agent({ ... }) 定义",
       "instructions — agent 长期遵守的工作手册：角色、边界、输出要求都写在这里",
       'Model Router — 模型写成 "provider/model" 字符串（如 deepseek/deepseek-flash），Mastra 自动读取对应的环境变量',
       "Mastra 实例 — new Mastra({ agents }) 是应用入口；注册过的 agent 才会出现在 Studio 里",
-      "agent.generate / agent.stream — 在脚本或服务里直接跑一次；stream 用于流式输出",
     ],
     docLinks: [
       { title: "Agents", href: "https://mastra.ai/docs/agents" },
@@ -298,21 +333,6 @@ import { myAgent } from "./agents/my-agent";
 
 // ② 在 new Mastra({ ... }) 的参数里加一项，其余配置保持不动
 agents: { myAgent },
-`,
-      },
-      {
-        path: "run-my-agent.mjs",
-        order: 3,
-        action: "create",
-        hint: "命令行跑一次，确认 agent 能回答",
-        code: `// 运行：node run-my-agent.mjs
-// Node 22.18+ 可以直接运行 TypeScript 文件，所以这里能 import .ts
-import { mastra } from "./src/mastra/index.ts";
-
-const agent = mastra.getAgentById("my-agent");
-const response = await agent.generate("用一句话介绍你自己");
-
-console.log(response.text);
 `,
       },
     ],

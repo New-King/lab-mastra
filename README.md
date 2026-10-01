@@ -70,6 +70,7 @@ pnpm dev          # 站点
 - [x] `mastra init` 的参数已录（2026-09-30 / 10-01，`mastra@1.31.4`）：**`--default` 是确定性路径**（硬编码 `components: [agents, tools, workflows]` + `addExample: true` + `src/` + OpenAI），实测生成 `weather-agent`；**只带 `--llm` 等部分参数则不会生成示例**；官方 `reference/cli/mastra` 的 `init` 一节无提问清单
 - [ ] **待验证**：`pnpm exec mastra dev`（4111）与 `pnpm dev`（3000）在同一项目里并行运行
 - [ ] **课里要说明**：`mastra init` 走**交互式**时会改写项目根 `AGENTS.md` / `CLAUDE.md` 并写入 `.agents/`、`skills-lock.json`（走 `--default` 则跳过）；API Key 留空时只写 `.env.example`、**不动 `.env`**；且**不往 `package.json` 加脚本**
+- [ ] **可选/进阶（暂不做）**：在 Studio 里编辑提示词需要装 `@mastra/editor` + `index.ts` 加 `editor: new MastraEditor()`；注意改动**不回写源码**（代码里是默认值），保存是 **draft**、`Publish` 才生效，另有 `source: 'code'` 模式可写成 JSON 走 Git。主线不开，作为延伸阅读候选
 - [ ] 按 `docs/curriculum.md` 写各课内容（先第 1~3 课）
 - [ ] 站点脚手架（照抄 lab-ai-sdk 的 components / layout-classes）
 - [ ] 学员项目模板（每课「跟做」需要的最终代码）

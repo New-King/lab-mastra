@@ -20,7 +20,7 @@ import {
 
 /** 项目页：操作列表 + 代码 + 右侧官方文档 */
 export function ProjectView({ project }: { project: LabProject }) {
-  const operations = getLabOperations(project.files);
+  const operations = getLabOperations(project.files, project.verify);
   const [selectedId, setSelectedId] = useState(operations[0]?.id ?? "");
   const detailRef = useRef<HTMLElement>(null);
   // 记录上一次滚动过的操作：进页面时（首次）不滚动，
@@ -296,6 +296,21 @@ const OperationDetail = forwardRef<
         <h2 className="text-sm font-semibold">代码</h2>
         <p className="text-sm leading-6 text-muted">{operation.description}</p>
         <CodePanel code={operation.command} language="bash" />
+      </section>
+    );
+  }
+
+  if (operation.kind === "check") {
+    return (
+      <section ref={ref} className="flex min-h-0 min-w-0 w-full flex-col space-y-2">
+        <h2 className="text-sm font-semibold">验收</h2>
+        <ul className="space-y-1">
+          {operation.description.map((line) => (
+            <li key={line} className="text-sm leading-6 text-muted">
+              {line}
+            </li>
+          ))}
+        </ul>
       </section>
     );
   }

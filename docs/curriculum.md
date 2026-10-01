@@ -52,7 +52,7 @@
   - `pnpm exec mastra dev` → Studio `http://localhost:4111`；另开一个终端 `pnpm dev` → 应用 `http://localhost:3000`
   - 把示例 agent 的模型换成 DeepSeek：`src/mastra/agents/weather-agent.ts` 里 `model: "deepseek/deepseek-flash"`（脚手架默认写的是 OpenAI，学员没有那个 key，不换则点它就报错）
 - **知识点**：Mastra 实例、Studio、Model Router（`provider/model` 字符串）
-- **验收**：Studio 里看到示例 agent，问它天气能答；两个 dev 命令互不干扰
+- **验收**：Studio 的 Agents 页（`http://localhost:4111/agents`）里看到示例 agent，问它天气能答；两个 dev 命令互不干扰
 - **文档**：`/guides/getting-started/next-js`、`/docs/studio/overview`、`/models/providers/deepseek`
 - **实测记录**（2026-09-30 / 10-01，`mastra@1.31.4`）：
   - `init` 生成 `src/mastra/{index.ts, agents/weather-agent.ts, tools/weather-tool.ts, workflows/weather-workflow.ts}`；写入依赖 `@mastra/core`、`@mastra/libsql`、`@mastra/memory`、`@mastra/duckdb`、`@mastra/observability`、`@mastra/loggers`、`mastra`、`zod`
@@ -67,7 +67,8 @@
 - **目标**：定义自己的 agent（`id` / `name` / `instructions` / `model`），换模型与 fallback
 - **能力**：Agent、instructions、Model Router、Providers / Gateways
 - **注意**：注册 agent 是往 `src/mastra/index.ts` **加两处**（顶部 `import` + `new Mastra({ agents })` 里加一项），**不要整体覆盖** —— scaffold 生成的文件里有 `storage` / `logger` / `observability`，覆盖就丢
-- **验收**：Studio 里出现自己的 agent，回答符合 instructions（例如固定用中文、限制话题）
+- **验收**：打开 `http://localhost:4111/agents`，跟 `my-agent` 对话；回答符合 instructions（例如固定用中文、限制话题）
+- **不做命令行脚本**：裸 `node` 跑 `src/mastra/index.ts` 不可行（无扩展名导入 + top-level await，`node` / `tsx` 都撞墙）；要用 HTTP 验证就等第 6 课的 `app/api/chat/route.ts`
 - **文档**：`/docs/agents`、`/docs/models`、`/models/providers/deepseek`
 
 ### 第 3 课 · 工具与结构化输出
