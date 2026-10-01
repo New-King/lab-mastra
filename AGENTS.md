@@ -6,13 +6,14 @@ Mastra 课程（lab-mastra）的约定。改这个仓库前先读本文件；与
 
 - **左侧菜单 = 主线课 + 进阶课**，顺序见 `docs/curriculum.md`（主线 14 课，进阶 5 课）。
 - 每课页 = 跟做步骤 + 知识点 + 文件 + 代码 + 右侧官方文档（`docLinks`），可选「延伸阅读」弹窗。
+- 每课有两个标题字段：`title`（页内 h1，完整、可带「：说明」）与 `menuTitle`（左侧菜单，短名）。**两个都必填**，不用派生规则截断。
 - 站点结构、组件、布局 class 与 `lab-ai-sdk` **保持一致**：`app/`、`components/`、`lib/layout-classes.ts` 直接复用 lab-ai-sdk；数据文件沿用同名 `lib/projects.ts`（`INIT_STEPS` / `NAV_ITEMS` / 类型与辅助函数）与 `lib/home.ts`。
 
 ## 二、动笔前必做：先查文档，不清楚就问
 
 1. **先查官方文档**：`https://mastra.ai/docs`（中文镜像 `https://mastra.org.cn`）。API 名、参数、CLI 参数与交互项逐项对着文档写；已有官方指南页（如 Next.js 集成）就用其原文措辞，**不自己重写流程**。
 2. **文档没写的、或文档与实际不符的**：先问用户。例：`create-mastra` 参考页列了 `--default` / `--components` / `--dir` / `--mcp`，但已发布版本里不存在（实测报 `unknown option`）。这类冲突不要自己跑命令试探，也不要凭印象写进课里。
-3. **需要取舍的**（学员项目形态、示例 agent 留不留、端点用 `chatRoute()` 还是 `handleChatStream()` 等）：给「方案 + 推荐 + 代价」，让用户拍板，不擅自决定。
+3. **需要取舍的**（学员项目形态、示例 agent 留不留、端点用 `chatRoute()` 还是 `handleChatStream()` 等）：给「方案 + 推荐 + 代价」，让用户拍板，不擅自决定。已定：**端点用官方 Next.js 指南的 `handleChatStream()` + `createUIMessageStreamResponse()`**，路由放 `app/api/generate/route.ts`（对齐 lab-ai-sdk 页面里写死的地址）。
 4. **没实测过的不要写成事实**：确认过的才写进步骤说明，未验证的在课里标 `待验证`，并同步进 `README.md` 待办。
 5. **改 `lib/projects.ts` 前先 `git diff` 或重读文件**：整段替换会**静默覆盖**别人的改动（别的 agent、用户自己的编辑都会中招）。
 
@@ -43,8 +44,9 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 | 1 | Next 一体化脚手架（`pnpm dlx create-next-app` + `pnpm dlx mastra@latest init`） | — |
 | 2 | — | `src/mastra/agents/*.ts` |
 | 3 | `src/mastra/tools/*.ts` | agent |
-| 4–5 | — | agent 的 memory 配置 |
-| 6 | `app/api/chat/route.ts` + 前端页面（复用 lab-ai-sdk）；首次装 `@mastra/ai-sdk` / `@ai-sdk/react` / `ai` | — |
+| 4 | — | agent 的 memory 配置（`lastMessages` + `workingMemory`） |
+| 5 | 依赖 `@mastra/fastembed`（本地嵌入） | agent 的 memory 配置（`semanticRecall` + `vector` + `messageHistory` 预算） |
+| 6 | `app/api/generate/route.ts`（`handleChatStream`）+ 复用 lab-ai-sdk 第 4 课的 `app/page.tsx`；首次装 `@mastra/ai-sdk` / `@ai-sdk/react` / `ai` | 覆盖脚手架 `app/page.tsx`；`index.ts` 的 storage `url` 改绝对路径 |
 | 7–9 | `src/mastra/workflows/*.ts` | agent / `index.ts` |
 | 10 | `src/mastra/knowledge/*.ts` | 检索工具注册 |
 | 11–12 | `src/mastra/evals/*.ts`、observability 配置 | `index.ts` |
@@ -54,9 +56,12 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 ## 六、代码与依赖约定
 
+- **统一场景**：学员的 agent 是**虚拟宇宙公司官方客服**（虚拟品牌，卖**武器、装备与药剂**；`src/mastra/agents/support-agent.ts`，`id: "support-agent"`；货币是**黑龙币**）。全课事实底本见 `docs/scenario.md`（产品 / SKU / 政策 P1–P5 / mock 数据 / 四类客户问题 / 三条纪律）—— 改场景必须**整条链一起改**：角色 → 任务 → 必须知道什么 → `workingMemory.schema` → 工具 → 政策语料。
+- **夸张的皮，严谨的规则**：世界观可以俏皮（虚拟宇宙公司、星际运输队、遁天梭），但天数、条件、责任方、金额一律精确 —— 第 7 课的分支与第 11 课的判分靠的是规则，不是设定。
+- **数据一律 mock**：订单、客户、物流都在 `src/mastra/data/` 里，**不接任何真实平台接口、不出现真实品牌名**；学员不需要任何商家凭证就能跑通全部 14 课。
 - 模型统一 **DeepSeek**：`model: "deepseek/deepseek-flash"` + `DEEPSEEK_API_KEY`；不要为了示例引入其他 provider（要讲多模型/fallback 时单独说明可选 provider）。
 - 存储用**本地 libSQL**（`file:./mastra.db`），不要默认上云服务（Turso 只在「部署」课作为可选说明）。
-- 依赖只加课程真需要的包：`@mastra/core`、`@mastra/ai-sdk`、`zod`。第 6 课接 lab-ai-sdk 前端时才装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装官方 Next.js 指南里推荐的 `ai-elements`**（前端用我们自己的）。
+- 依赖只加课程真需要的包：`@mastra/core`、`@mastra/ai-sdk`、`zod`。第 5 课为语义召回加 `@mastra/fastembed`（本地嵌入，避免引入第二个 provider 的 key）；第 6 课接 lab-ai-sdk 前端时才装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装官方 Next.js 指南里推荐的 `ai-elements`**（前端用我们自己的）。
 - 示例代码写**中文注释**讲关键行为；知识点列表只列名称，注释解释用法。
 - **跟做步骤的文案照 `lab-ai-sdk` 的写法**：一句话、动词开头、只说做什么；`choices` 用「项 → 取值」。理由、取舍、背景**不写进步骤说明**（放知识点、延伸阅读或仓库文档）。
 - 课的 `agentPrompt` 必须**显式给出项目路径占位符**（如 `[路径名]`），并要求 agent 在位置不明确时先问用户 —— 不能依赖 agent 的当前工作目录（它可能正是课程站点仓库，会把项目建进去）。
@@ -67,7 +72,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 - 只挂 **Mastra 官方文档**（`https://mastra.ai/docs/...`），一课 3~5 条，与当课能力一一对应。
 - 每次改动后**批量校验 HTTP 200**（Mastra 文档路径变动频繁）。
-- AI SDK 的文档只在「接自己的前端」一课挂 1 条（`@ai-sdk/react` 的 useChat 参考）。
+- AI SDK 的文档只在「接入前端」一课挂 1 条（`@ai-sdk/react` 的 useChat 参考）。
 
 ## 八、版本与时效
 
@@ -75,7 +80,7 @@ Mastra 迭代快，API 变动频繁：
 
 - 每课在 `docs/curriculum.md` 里记录**验证时使用的 Mastra 版本**。
 - 示例代码以官方文档为准；写课时代码必须**实际跑通**（Studio 或脚本），不能只抄文档。
-- 已知会变动的点（如 `chatRoute()` 需要指定对接的 AI SDK 版本、`create-mastra` 的 CLI 参数）要在课里显式说明。
+- 已知会变动的点（如 `@mastra/ai-sdk` 的 `handleChatStream()` 需要指定对接的 AI SDK 版本 `version: "v7"`、`create-mastra` / `mastra init` 的 CLI 参数）要在课里显式说明。
 
 ## 九、每次改动的自检清单
 

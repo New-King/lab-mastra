@@ -43,7 +43,7 @@ export function LabSidebar() {
                   }`}
                 >
                   <span className="mr-2 text-xs opacity-60">{index + 1}</span>
-                  <span className="text-sm">{item.title}</span>
+                  <span className="text-sm">{item.menuTitle}</span>
                 </Link>
               </li>
             );

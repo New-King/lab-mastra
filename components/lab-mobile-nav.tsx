@@ -88,7 +88,7 @@ export function LabMobileNav() {
                     }`}
                   >
                     <span className="mr-2 text-xs opacity-60">{index + 1}</span>
-                    {item.title}
+                    {item.menuTitle}
                   </Link>
                 </li>
               );

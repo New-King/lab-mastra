@@ -30,9 +30,9 @@
 | **Build / Memory** | Message History | 第 4 课 |
 | | Working Memory | 第 4 课 |
 | | Semantic Recall | 第 5 课 |
-| | Observational Memory | 第 5 课 |
-| | Memory Processors | 第 5 课 |
-| | Multi-User Threads | 第 5 课 |
+| | Observational Memory | **暂不进主线**（长会话压缩，需要 LibSQL / PG / MongoDB；第 5 课先用内置 `messageHistory.maxTokens` 解决，等有长会话场景再定） |
+| | Memory Processors | 第 13 课（与通用 Processors 一起讲；第 5 课的裁剪走内置 `messageHistory`） |
+| | Multi-User Threads | 第 5 课（`thread` / `resource` 概念；多人共用一条 thread 的 speaker 标签作为知识点） |
 | **Extend** | Subagents / Skills | 进阶 A1 |
 | | Channels | 进阶 A3 |
 | | Sandboxes（Filesystem / Search / Computer / LSP） | 进阶 A4 |
@@ -90,8 +90,8 @@
 
 | 我们补的能力 | 课 |
 |---|---|
-| **接自己的前端**（`chatRoute()` + AI SDK UI，复用 lab-ai-sdk 页面） | 第 6 课 |
-| Semantic Recall / Observational Memory / Memory Processors / 多用户线程隔离 | 第 5 课 |
+| **接入前端**（`handleChatStream()` + AI SDK UI，复用 lab-ai-sdk 第 4 课页面） | 第 6 课 |
+| Semantic Recall / `thread` + `resource` 隔离 / 多用户线程 | 第 5 课 |
 | 定时任务与后台任务（Scheduled Workflows / Background Tasks / Schedules） | 第 9 课 |
 | Guardrails 与 Processors（注入防护、输出脱敏） | 第 13 课 |
 | Evals 的 CI / Datasets / Gates / Experiments（它只到 scorer + trace） | 第 11 课 |

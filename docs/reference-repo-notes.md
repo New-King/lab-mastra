@@ -58,7 +58,7 @@
 
 | 我们补的 | 课 | 为什么要补 |
 |---|---|---|
-| 接自己的前端（`chatRoute()` + AI SDK UI） | 第 6 课 | 它只在 Studio 里验证；多数人要交付产品界面 |
+| 接入前端（`handleChatStream()` + AI SDK UI，复用 lab-ai-sdk 页面） | 第 6 课 | 它只在 Studio 里验证；多数人要交付产品界面 |
 | Semantic Recall / Observational Memory / Memory Processors / 多用户线程隔离 | 第 5 课 | 它只用 thread Working Memory，没有长期记忆与跨会话召回 |
 | 定时 / 后台任务（Scheduled Workflows、Background Tasks、Schedules） | 第 9 课 | 模板自带 schedules，但阶段里没讲 |
 | Guardrails 与 Processors | 第 13 课 | 它把注入防护放到阶段 9 的清单里，缺专门一课 |

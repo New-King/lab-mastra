@@ -38,7 +38,7 @@ export const HOME = {
       title: "和 AI SDK 的区别与关系",
       paragraphs: [
         "两者是同一件事的两层，不是二选一：AI SDK 是 SDK —— 服务端（Core）发请求，UI 端（消费端）接流渲染；Mastra 是框架 —— 管运行状态、多步编排、审批、容错与评测；不提供前端渲染层。",
-        "Mastra 支持 AI SDK：@mastra/ai-sdk 的 chatRoute() 把 agent 输出成 AI SDK 的消息流（第 6 课）。",
+        "Mastra 支持 AI SDK：@mastra/ai-sdk 的 handleChatStream() 把 agent 输出成 AI SDK 的消息流（第 6 课）。",
       ],
       bullets: [
         "AI SDK（见 lab-ai-sdk）— 服务端 Core（generateText / streamText / generateObject）+ UI 端（消息流协议、hooks 与前端渲染）。",
@@ -57,7 +57,8 @@ export const HOME = {
       title: "本 Lab 讲什么",
       paragraphs: [
         "项目驱动：在自己的 Next 项目 my-mastra-app 里逐课叠加能力（前端在 app/，Mastra 在 src/mastra/），Lab 提供步骤、代码与官方文档对照。",
-        "学习路径：初始化 → Agent 与模型 → 工具与结构化输出 → 记忆 → 接自己的前端 → 工作流（编排 / 暂停恢复 / 容错定时）→ RAG → 评测 → 观测 → 安全与上线。",
+        "场景统一：学员的 agent 是虚拟宇宙公司的官方客服 —— 卖武器、装备与药剂（第 2 课定下来），后面每一课都在它身上叠加能力——工具、记忆、前端、工作流。",
+        "学习路径：初始化 → Agent 与模型 → 工具调用 → 记忆 → 接入前端 → 工作流（编排 / 暂停恢复 / 容错定时）→ RAG → 评测 → 观测 → 安全与上线。",
         "进阶（可选）：Subagents 与 Skills、接入外部工具（MCP）、渠道接入、Sandbox、动态工作流。",
       ],
     },
