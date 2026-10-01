@@ -340,9 +340,9 @@ agents: { weatherAgent,myAgent },
   {
     kind: "project",
     slug: "tools-and-structured-output",
-    title: "工具与结构化输出",
+    title: "工具调用",
     summary:
-      "让 agent 会调工具：用 createTool 定义自己的工具、用 zod 约束入参和返回值；再让 agent 直接产出结构化对象。",
+      "让 agent 会调工具：用 createTool 定义自己的工具、用 zod 约束入参和返回值，再挂到 agent 上。",
     verify: {
       label: "去 Studio 试工具",
       description: [
@@ -357,7 +357,6 @@ agents: { weatherAgent,myAgent },
       "outputSchema — 工具的返回值也用 zod 约束，后面拿到的就是结构化数据",
       "execute(input, context) — 只有这一种签名：校验后的入参 + 执行上下文（requestContext、abortSignal 等），用不到时可省略第二个参数",
       "tools — 传给 Agent：tools: { getCurrentTime }，由模型决定什么时候调用",
-      "structuredOutput — agent.generate(prompt, { structuredOutput: { schema } }) 让回复直接是对象，读 response.object",
     ],
     docLinks: [
       { title: "Tools", href: "https://mastra.ai/docs/agents/tools" },

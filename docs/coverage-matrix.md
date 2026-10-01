@@ -8,7 +8,7 @@
 | 官方分区 | 能力页 | 课次 |
 |---|---|---|
 | **Build / Agents** | Tools | 第 3 课 |
-| | Structured Output | 第 3 课 |
+| | Structured Output | **暂不进主线**（Studio 不支持传 schema，脚本方式在现脚手架下跑不通；等有 route / HTTP 载体再定） |
 | | Human-in-the-Loop | 第 8 课 |
 | | Guardrails | 第 13 课 |
 | | Processors | 第 13 课 |

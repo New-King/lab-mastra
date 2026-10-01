@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | 1 | 初始化 | Next 一体化脚手架 / Mastra 实例 / Studio / Model Router | 起步 | 前端项目就位（`app/`） |
 | 2 | Agent 与模型 | Agent、instructions、Model Router、Fallback | 阶段 1（部分） | — |
-| 3 | 工具与结构化输出 | `createTool`、Structured Output、RequestContext | 阶段 2 | — |
+| 3 | 工具调用 | `createTool`、RequestContext | 阶段 2 | — |
 | 4 | 记忆（一）：会话与工作记忆 | Message History、Working Memory、Storage | 阶段 1 | — |
 | 5 | 记忆（二）：语义召回与多用户 | Semantic Recall、Observational Memory、Processors、Multi-User Threads | **未覆盖（我们补）** | — |
 | 6 | 接自己的前端 | `@mastra/ai-sdk` 的 `chatRoute()`、Server、Client | **未覆盖（我们补）** | 复用lab-ai-sdk 第 5 / 7 课 |
@@ -92,14 +92,14 @@
 - **不做命令行脚本**：裸 `node` 跑 `src/mastra/index.ts` 不可行（无扩展名导入 + top-level await，`node` / `tsx` 都撞墙）；要用 HTTP 验证就等第 6 课的 `app/api/chat/route.ts`
 - **文档**：`/docs/agents`、`/docs/models`、`/models/providers/deepseek`
 
-### 第 3 课 · 工具与结构化输出
+### 第 3 课 · 工具调用
 
-- **目标**：`createTool({ id, description, inputSchema, outputSchema, execute })`；写一个**自己的**工具并挂到 agent；用 structured output 拿结构化结果
+- **目标**：`createTool({ id, description, inputSchema, outputSchema, execute })`；写一个**自己的**工具并挂到 agent
 - **原则（借参考仓库阶段 2）**：**能用代码判断的业务规则，别写在 instructions 里** —— 放进工具的确定性函数，并为它写**不依赖模型**的单元测试
 - **不碰脚手架自带的 `tools/weather-tool.ts`**：它是官方示例（真调 open-meteo），课里保持原样；本课自己新建 `tools/time-tool.ts`（查时区当前时间）——顺便说明「模型算不准"现在几点"，这类确定性的事必须交给代码」
 - **注意**：`execute(input, context)` 两个参数；裸对象工具不生效
 - **验收**：`http://localhost:4111/agents` 里问 my-agent「东京现在几点？」→ 它调用 `getCurrentTime` 并返回准确时间；Trace 里能看到工具入参 / 返回值
-- **待定**：`structuredOutput`（agent 级）目前**没有可跑的载体**（Studio 不支持传 schema，脚本方式已证明跑不通）→ 要么挪到第 6 课用 route 验，要么课里注明"实操见第 6 课"
+- **不讲 `structuredOutput`**：目前**没有可跑的载体**（Studio 不支持传 schema；脚本方式在现脚手架下跑不通），已从第 3 课移除；`coverage-matrix.md` 标记为「暂不进主线」，等有 route / HTTP 载体再定
 - **文档**：`/docs/agents/tools`、`/docs/agents/structured-output`、`/docs/server/request-context`
 
 ### 第 4 课 · 记忆（一）：会话与工作记忆
