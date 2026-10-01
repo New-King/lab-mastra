@@ -64,12 +64,12 @@ pnpm dev          # 站点
 
 ## 待办
 
-- [ ] **实跑确认**：Next 一体化下 `npx mastra dev`（Studio 4111）与 `npm run dev`（应用 3000）能否并存（官方 Next.js 指南未提 Studio）
+- [x] Studio 在 Next 一体化项目里可起：`pnpm exec mastra dev` → `http://localhost:4111`（2026-10-01 实测，官方 Next.js 指南未提 Studio）
 - [ ] **定端点写法**：官方 Next.js 指南用 `handleChatStream()` + `createUIMessageStreamResponse()`，reference 另有 `chatRoute()`；第 6 课二选一后统一 AGENTS / README / 课表措辞
 - [ ] **验参数写法**：第 1 课命令里的 `--no-react-compiler` / `--no-import-alias` 没出现在 `create-next-app --help` 里（只有正向的 `--react-compiler`、`--import-alias <prefix/*>`），可能报 `unknown option`；若如此，页面与提示词一起改
-- [x] `mastra init` 的真实交互项已录（2026-09-30，`mastra@1.31.4`）：创建位置 / 默认模型提供商 / API Key / Observability / 编码助手工具 → 已写进第 1 课；官方 `reference/cli/mastra` 的 `init` 一节无提问清单，参数为 `--default`、`--dir`、`--components`、`--llm`（无 deepseek）、`--llm-api-key`、`--example`·`--no-example`、`--mcp`、`--observability`·`--no-observability`
-- [ ] **待验证**：`pnpm exec mastra dev`（Studio 4111）与 `pnpm dev`（应用 3000）在同一项目里并行运行
-- [ ] **课里要说明**：`mastra init` 会改写学员项目根的 `AGENTS.md` / `CLAUDE.md` 并写入 `.agents/`、`skills-lock.json`（编码助手 skills），且**不往 `package.json` 加脚本**
+- [x] `mastra init` 的参数已录（2026-09-30 / 10-01，`mastra@1.31.4`）：**`--default` 是确定性路径**（硬编码 `components: [agents, tools, workflows]` + `addExample: true` + `src/` + OpenAI），实测生成 `weather-agent`；**只带 `--llm` 等部分参数则不会生成示例**；官方 `reference/cli/mastra` 的 `init` 一节无提问清单
+- [ ] **待验证**：`pnpm exec mastra dev`（4111）与 `pnpm dev`（3000）在同一项目里并行运行
+- [ ] **课里要说明**：`mastra init` 走**交互式**时会改写项目根 `AGENTS.md` / `CLAUDE.md` 并写入 `.agents/`、`skills-lock.json`（走 `--default` 则跳过）；API Key 留空时只写 `.env.example`、**不动 `.env`**；且**不往 `package.json` 加脚本**
 - [ ] 按 `docs/curriculum.md` 写各课内容（先第 1~3 课）
 - [ ] 站点脚手架（照抄 lab-ai-sdk 的 components / layout-classes）
 - [ ] 学员项目模板（每课「跟做」需要的最终代码）

@@ -7,7 +7,7 @@ export type CommandStep = {
   choices?: string[];
 };
 
-export type FileAction = "create" | "replace";
+export type FileAction = "create" | "replace" | "edit";
 
 export type ProjectFile = {
   path: string;
@@ -16,7 +16,7 @@ export type ProjectFile = {
   steps?: CommandStep[];
   /** 项目课：跟做顺序 */
   order?: number;
-  /** 项目课：新建或覆盖已有文件 */
+  /** 项目课：新建（create）/ 整体覆盖（replace）/ 局部修改（edit） */
   action?: FileAction;
 };
 
@@ -138,7 +138,9 @@ export function getOrderLabel(order: number) {
 }
 
 export function getFileActionLabel(action: FileAction) {
-  return action === "replace" ? "覆盖" : "新建";
+  if (action === "replace") return "覆盖";
+  if (action === "edit") return "修改";
+  return "新建";
 }
 
 export function getFileName(path: string) {
@@ -155,14 +157,12 @@ export const INIT_STEPS: CommandStep[] = [
     command: `pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`,
   },
   {
-    description: "初始化 Mastra，生成 src/mastra/。",
-    command: `cd ${PROJECT_DIR} && pnpm dlx mastra@latest init`,
+    description: "初始化 Mastra，生成 src/mastra/（推荐直接用这条带参数命令，跳过交互提问）。",
+    command: `cd ${PROJECT_DIR} && pnpm dlx mastra@latest init --default --no-observability`,
     choices: [
-      "创建位置 → 默认 src/（回车）",
-      "默认模型提供商 → OpenAI（列表里没有 DeepSeek）",
-      "API Key → 留空即可",
-      "Enable Mastra Observability → No",
-      "编码助手工具 → 按需（会在项目里写入 skills 文件）",
+      "--default = 位置 src/ + 提供商 OpenAI + 示例代码（agents/weather-agent.ts、tools/weather-tool.ts、workflows/weather-workflow.ts）",
+      "若仍出现选项：创建位置 src/ → 提供商 OpenAI → API Key 留空 → Observability No → 编码助手工具按需",
+      "注意：只带 --llm 这类部分参数（不给 -c）不会生成示例；要么用 --default，要么走交互",
     ],
   },
   {
@@ -199,17 +199,15 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
 执行步骤：
 
 1. 进入 <父目录>，执行 pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias
-2. 进入 ${PROJECT_DIR}，执行 pnpm dlx mastra@latest init，交互项按下表选，未列出的项用默认值：
-   - 创建位置 → 默认 src/
-   - 默认模型提供商 → OpenAI（列表里没有 DeepSeek；第 2 课会换成 deepseek/deepseek-flash）
-   - API Key → 留空
-   - Enable Mastra Observability → No（若仍装上 @mastra/observability 或生成相关配置，保持原样，别手改）
-   - 编码助手工具 → 按需（装了会在项目里写入 skills 文件）
+2. 进入 ${PROJECT_DIR}，执行 pnpm dlx mastra@latest init --default --no-observability
+   --default = 位置 src/ + 提供商 OpenAI + 示例代码（agents/weather-agent.ts、tools/weather-tool.ts、workflows/weather-workflow.ts）。
+   不要走交互问答（执行环境没有 TTY，会卡住）；也不要只带 --llm 这类部分参数——不带 -c 时不会生成示例。
+   若仍出现选项：API Key 留空、Observability 选 No、编码助手工具按需。
 3. 删掉脚手架建的 git 仓库：rm -rf .git
-4. 在项目根目录新建 .env，只写 DEEPSEEK_API_KEY=<key>；不要写其他 provider 的占位 key
+4. 在项目根目录准备 .env，只写 DEEPSEEK_API_KEY=<key>。API Key 留空时 init 只会生成 .env.example，把它复制成 .env，并删掉里面的占位行。
 5. 后台启动 Studio：pnpm exec mastra dev（默认 http://localhost:4111）
 6. 后台启动前端：pnpm dev（默认 http://localhost:3000）
-7. 最后统一汇报：两个实际访问地址、Studio 里第一步该点哪里验收（若没有任何 agent / workflow，就直说没有可点的对象）、改动过的文件清单，以及所有与上面步骤不一致之处
+7. 最后统一汇报：两个实际访问地址、src/mastra/agents/weather-agent.ts 是否已生成、Studio 里第一步该点哪里验收、改动过的文件清单，以及所有与上面步骤不一致之处
 
 约束：端口被占就自己换（Next / Mastra 会自动选下一个端口），不要 kill 别人的进程；允许只读探测（如 --help、查端口占用）；不改生成代码、不装 ai-elements、不额外引入 provider / 云服务 / 依赖；不替我 git commit / git push（脚手架自带的 git init 和 initial commit 属正常）；只改上述范围内的文件。`,
     docLinks: [
@@ -230,14 +228,19 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
       },
       {
         path: ".env",
-        hint: "打开 .env，把变量名改成 DEEPSEEK_API_KEY（init 写的是所选 provider 的名字；Mastra 按模型前缀读对应变量）：",
+        hint: "API Key 留空时 init 只写 .env.example（内容为 OPENAI_API_KEY=your-api-key），先复制成 .env，再把变量名改成 DEEPSEEK_API_KEY（Mastra 按模型前缀读对应变量）：",
         steps: [
           {
-            description: `先进入 ${PROJECT_DIR} 项目目录，再打开 .env。`,
-            command: "touch .env",
+            description: `先进入 ${PROJECT_DIR} 项目目录，把 .env.example 复制成 .env。`,
+            command: "cp .env.example .env",
           },
         ],
         code: `DEEPSEEK_API_KEY=sk-...`,
+      },
+      {
+        path: "src/mastra/agents/weather-agent.ts",
+        hint: "把示例 agent 的模型换成 DeepSeek（脚手架默认写的是 OpenAI，学员没有那个 key），Studio 里才能真的对话：",
+        code: `model: "deepseek/deepseek-flash",`,
       },
     ],
   },
@@ -288,15 +291,13 @@ export const myAgent = new Agent({
       {
         path: "src/mastra/index.ts",
         order: 2,
-        action: "replace",
-        hint: "注册 agent（脚手架已有此文件，覆盖它）",
-        code: `import { Mastra } from "@mastra/core";
-import { myAgent } from "./agents/my-agent.ts";
+        action: "edit",
+        hint: "只加两处，不要整体覆盖 —— 保留脚手架已有的 storage / logger / observability",
+        code: `// ① 顶部加一行 import
+import { myAgent } from "./agents/my-agent";
 
-// 应用入口：只有注册到这里的 agent 才会出现在 Studio 里
-export const mastra = new Mastra({
-  agents: { myAgent },
-});
+// ② 在 new Mastra({ ... }) 的参数里加一项，其余配置保持不动
+agents: { myAgent },
 `,
       },
       {

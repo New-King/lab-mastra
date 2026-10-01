@@ -47,19 +47,26 @@
 - **目标**：跑通 Next 一体化项目（前端 `app/` + Mastra `src/mastra/`），Studio 里能看到示例 agent
 - **命令**（官方 Next.js 指南的写法）：
   - `pnpm dlx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
-  - `cd my-mastra-app && pnpm dlx mastra@latest init`；实测交互项：创建位置（默认 `src/`）→ 默认模型提供商（**列表里没有 DeepSeek**）→ API Key（可留空）→ Enable Mastra Observability（选 `No`）→ 编码助手工具（按需）
-  - `.env` 补 `DEEPSEEK_API_KEY`（`init` 写的是所选 provider 的 key，另加一行即可）
+  - `cd my-mastra-app && pnpm dlx mastra@latest init --default --no-observability`（`--default` = 位置 `src/` + 提供商 OpenAI + 示例代码；**不要让 agent 走交互提问——它没有 TTY，会卡住**；也不要只带 `--llm` 这类部分参数，不带 `-c` 时不会生成示例）
+  - `.env`：API Key 留空时 `init` 只生成 `.env.example` → `cp .env.example .env`，再把变量名改成 `DEEPSEEK_API_KEY`
   - `pnpm exec mastra dev` → Studio `http://localhost:4111`；另开一个终端 `pnpm dev` → 应用 `http://localhost:3000`
+  - 把示例 agent 的模型换成 DeepSeek：`src/mastra/agents/weather-agent.ts` 里 `model: "deepseek/deepseek-flash"`（脚手架默认写的是 OpenAI，学员没有那个 key，不换则点它就报错）
 - **知识点**：Mastra 实例、Studio、Model Router（`provider/model` 字符串）
-- **验收**：Studio 打开并看到示例 agent；两个 dev 命令互不干扰
+- **验收**：Studio 里看到示例 agent，问它天气能答；两个 dev 命令互不干扰
 - **文档**：`/guides/getting-started/next-js`、`/docs/studio/overview`、`/models/providers/deepseek`
-- **实测记录**（2026-09-30，`mastra@1.31.4`）：`init` 生成 `src/mastra/{index.ts, agents/weather-agent.ts, tools/weather-tool.ts, workflows/weather-workflow.ts}`；写入依赖 `@mastra/core`、`@mastra/libsql`、`@mastra/memory`、`@mastra/duckdb`、`@mastra/observability`、`@mastra/loggers`、`mastra`、`zod`；**不往 `package.json` 加脚本**（所以 Studio 用 `pnpm exec mastra dev`）；**会改写项目根的 `AGENTS.md` / `CLAUDE.md`，并写入 `.agents/` + `skills-lock.json`**；结尾的 `PostHogFetchNetworkError` 只是遥测上报失败，不影响初始化（可用 `MASTRA_TELEMETRY_DISABLED=1` 消除）
+- **实测记录**（2026-09-30 / 10-01，`mastra@1.31.4`）：
+  - `init` 生成 `src/mastra/{index.ts, agents/weather-agent.ts, tools/weather-tool.ts, workflows/weather-workflow.ts}`；写入依赖 `@mastra/core`、`@mastra/libsql`、`@mastra/memory`、`@mastra/duckdb`、`@mastra/observability`、`@mastra/loggers`、`mastra`、`zod`
+  - `--default` 是**确定性路径**（硬编码 `components: [agents, tools, workflows]` + `addExample: true` + `src/` + OpenAI），实测产出 `weather-agent`；只带 `--llm` 等部分参数则**不会**生成示例
+  - **不往 `package.json` 加脚本**（所以 Studio 用 `pnpm exec mastra dev`）；API Key 留空时只写 `.env.example`，**不动 `.env`**；**不重新 `git init`**
+  - 走交互式时：**会改写项目根的 `AGENTS.md` / `CLAUDE.md`，并写入 `.agents/` + `skills-lock.json`**（走 `--default` 则跳过这两项）
+  - 结尾的 `PostHogFetchNetworkError` 只是遥测上报失败，不影响初始化（可用 `MASTRA_TELEMETRY_DISABLED=1` 消除）
 - **待验证**：`pnpm exec mastra dev` 与 `pnpm dev` 在同一项目里并行运行；`create-next-app` 的 `--no-react-compiler` / `--no-import-alias` 写法（未出现在 `--help` 里）
 
 ### 第 2 课 · Agent 与模型
 
 - **目标**：定义自己的 agent（`id` / `name` / `instructions` / `model`），换模型与 fallback
 - **能力**：Agent、instructions、Model Router、Providers / Gateways
+- **注意**：注册 agent 是往 `src/mastra/index.ts` **加两处**（顶部 `import` + `new Mastra({ agents })` 里加一项），**不要整体覆盖** —— scaffold 生成的文件里有 `storage` / `logger` / `observability`，覆盖就丢
 - **验收**：Studio 里出现自己的 agent，回答符合 instructions（例如固定用中文、限制话题）
 - **文档**：`/docs/agents`、`/docs/models`、`/models/providers/deepseek`
 

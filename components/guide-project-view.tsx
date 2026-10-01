@@ -12,6 +12,11 @@ import {
 } from "@/lib/layout-classes";
 import { getOrderLabel, type GuideProject } from "@/lib/projects";
 
+/** 「终端」这类命令块不含后缀；真实文件（`.env` / `src/…/x.ts`）才带路径，交给 CodePanel 推断语言 */
+function isFilePath(path: string) {
+  return path.includes(".");
+}
+
 /** 初始化：命令清单，左中右布局 */
 export function GuideProjectView({ project }: { project: GuideProject }) {
   const [selectedPath, setSelectedPath] = useState(project.files[0]?.path ?? "");
@@ -121,8 +126,9 @@ function CodeBlock({ file }: { file: GuideProject["files"][number] | undefined }
           )}
           <CodePanel
             code={file.code}
-            path={file.steps ? file.path : undefined}
-            language={file.steps ? undefined : "bash"}
+            // 命令行块不带路径（language 固定 bash）；真实文件带上路径，让 CodePanel 按后缀推断语言
+            path={isFilePath(file.path) ? file.path : undefined}
+            language={isFilePath(file.path) ? undefined : "bash"}
           />
         </div>
       )}

@@ -308,7 +308,7 @@ const OperationDetail = forwardRef<
       {(file.action || file.hint) && (
         <p className="text-sm leading-6 text-muted">
           {[
-            file.action === "create" ? getFileActionLabel(file.action) : null,
+            file.action ? getFileActionLabel(file.action) : null,
             file.hint,
           ]
             .filter(Boolean)
