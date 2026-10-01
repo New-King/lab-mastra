@@ -38,9 +38,9 @@ lab-mastra/
 ```text
 第 1 课  pnpm dlx create-next-app + pnpm dlx mastra@latest init
         → app/（前端，根目录）+ src/mastra/（agent、工具、index.ts）
-第 2 课  新建 agents/support-agent.ts（虚拟宇宙公司客服：instructions + 模型）+ 注册进 index.ts
-第 3 课  新增 data/orders.ts（mock 订单）+ tools/return-tool.ts（资格判定）+ 覆盖 agent
-第 4 课  覆盖 agents/support-agent.ts（memory：lastMessages + customerProfile）
+第 2 课  新建 agents/support-agent.ts（虚拟宇宙公司客服：instructions + 模型 + 会话记忆）+ 注册进 index.ts
+第 3 课  新增 data/products.ts（在售清单）、data/orders.ts（mock 订单）、tools/lookup-tool.ts、tools/return-tool.ts + 覆盖 agent
+第 4 课  覆盖 agents/support-agent.ts（加工作记忆 customerProfile：跨 thread 认客户）
 第 5 课  覆盖 agents/support-agent.ts（semanticRecall + messageHistory 预算 + thread/resource）；新增依赖 @mastra/fastembed
 第 6 课  新增 app/api/generate/route.ts（handleChatStream）+ 复用 lab-ai-sdk 第 4 课的 app/page.tsx
 第 7~9 课 新增 workflows/*.ts（售后流程 / 审批挂起 / 定时跟进）+ 覆盖 agent/index
@@ -76,6 +76,7 @@ pnpm dev          # 站点
 - [ ] **待验证**：`pnpm exec mastra dev`（4111）与 `pnpm dev`（3000）在同一项目里并行运行
 - [ ] **课里要说明**：`mastra init` 走**交互式**时会改写项目根 `AGENTS.md` / `CLAUDE.md` 并写入 `.agents/`、`skills-lock.json`（走 `--default` 则跳过）；API Key 留空时只写 `.env.example`、**不动 `.env`**；且**不往 `package.json` 加脚本**
 - [ ] **可选/进阶（暂不做）**：在 Studio 里编辑提示词需要装 `@mastra/editor` + `index.ts` 加 `editor: new MastraEditor()`；注意改动**不回写源码**（代码里是默认值），保存是 **draft**、`Publish` 才生效，另有 `source: 'code'` 模式可写成 JSON 走 Git。主线不开，作为延伸阅读候选
+- [ ] **第 3 课待实测**：无入参工具 `listProducts`（`inputSchema: z.object({})`）是否被当前版本正常调用
 - [ ] 按 `docs/curriculum.md` 写各课内容（先第 1~3 课）
 - [ ] 站点脚手架（照抄 lab-ai-sdk 的 components / layout-classes）
 - [ ] 学员项目模板（每课「跟做」需要的最终代码）

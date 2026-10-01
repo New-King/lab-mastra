@@ -12,9 +12,9 @@
 | # | 课 | 核心能力（Mastra 侧） | 参考仓库对应阶段 | 前端 |
 |---|---|---|---|---|
 | 1 | 初始化 | Next 一体化脚手架 / Mastra 实例 / Studio / Model Router | 起步 | 前端项目就位（`app/`） |
-| 2 | Agent 与模型 | Agent、instructions、Model Router、Fallback | 阶段 1（部分） | 定下全课场景：虚拟宇宙公司客服（星域装备） |
+| 2 | Agent 与模型 | Agent、instructions、会话记忆（Message History）、Model Router | 阶段 1（部分） | 定下全课场景：虚拟宇宙公司客服 |
 | 3 | 工具调用 | `createTool`、RequestContext | 阶段 2 | — |
-| 4 | 记忆（一）：会话与工作记忆 | Message History、Working Memory、Storage | 阶段 1 | — |
+| 4 | 记忆（一）：长期记忆与客户档案 | Working Memory、Storage | 阶段 1 | 会话记忆第 2 课已有 |
 | 5 | 记忆（二）：语义召回与多用户 | Semantic Recall、Message History（token 预算）、Multi-User Threads | **未覆盖（我们补）** | — |
 | 6 | 接入前端：复用 lab-ai-sdk 的页面 | `@mastra/ai-sdk` 的 `handleChatStream()` / `toAISdkMessages()`、Server、Client | **未覆盖（我们补）** | 复用 lab-ai-sdk 第 4 课页面 |
 | 7 | 工作流（一）：把问答变成流程 | Workflow State、Control Flow、Agents & Tools | 阶段 3 | 复用第 6 课页面 |
@@ -86,10 +86,11 @@
 ### 第 2 课 · Agent 与模型
 
 - **目标**：定义自己的 agent（`id` / `name` / `instructions` / `model`），换模型与 fallback
-- **能力**：Agent、instructions、Model Router、Providers / Gateways
+- **能力**：Agent、instructions、会话记忆（`Memory` + `lastMessages`）、Model Router、Providers / Gateways
+- **会话记忆在这里就配**：`memory: new Memory({ options: { lastMessages: 20 } })` —— 不配的话每轮只看到最新一条消息，多轮对话接不上（Studio 只发新消息，历史由服务端 memory 提供）
 - **场景（全课统一）**：agent = **虚拟宇宙公司官方客服**（`id: "support-agent"`，文件 `src/mastra/agents/support-agent.ts`），卖武器、装备与药剂，货币用**黑龙币**；事实底本见 `docs/scenario.md`。选它的理由：客服天然有**规则可算**（退换窗口 / 修复）、**政策可查**（P1–P5）、**审批有后果**（补偿上限）、**数据敏感**（通讯号 / 收货坐标）、**多客户要隔离** —— 第 7/8/9/10/11/13/14 课全都有硬落点
 - **注意**：注册 agent 是往 `src/mastra/index.ts` **加两处**（顶部 `import` + `new Mastra({ agents })` 里加一项），**不要整体覆盖** —— scaffold 生成的文件里有 `storage` / `logger` / `observability`，覆盖就丢
-- **验收**：打开 `http://localhost:4111/agents`，跟 `support-agent` 对话；问「我的金丝断裂」它会先要物品序列号或订单号（说明 instructions 生效）
+- **验收**：打开 `http://localhost:4111/agents`，跟 `support-agent` 对话；问「我的刀坏了」它会按在售清单反问是不是 S 级飞刀；问「我的机甲坏了」它直接说明不在售后范围（说明 instructions 生效）
 - **不做命令行脚本**：裸 `node` 跑 `src/mastra/index.ts` 不可行（无扩展名导入 + top-level await，`node` / `tsx` 都撞墙）；要用 HTTP 验证就等第 6 课的 `app/api/generate/route.ts`
 - **文档**：`/docs/agents`、`/docs/models`、`/models/providers/deepseek`
 
@@ -97,25 +98,29 @@
 
 - **目标**：`createTool({ id, description, inputSchema, outputSchema, execute })`；写一个**自己的**工具并挂到 agent
 - **原则（借参考仓库阶段 2）**：**能用代码判断的业务规则，别写在 instructions 里** —— 放进工具的确定性函数，并为它写**不依赖模型**的单元测试
-- **工具选题**：`tools/return-tool.ts` 的 `checkReturnEligibility({ serial, issue })` —— 按 P1 / P2 / P3 判定 `refund` / `exchange` / `repair` / `reject` / `pending`。选它的理由：**模型只负责把客户的话归成 `issue`，天数与条款由代码算** —— 这正是「能用代码判断的业务规则别写在 instructions 里」；而且它读的 `serial` 又是第 4 课工作记忆的字段，两课接成一条链
-- **mock 数据**：`src/mastra/data/orders.ts`（5 条订单，刻意覆盖可退 / 可换 / 保修内 / 超修复 / 未签收全部分支）；真实项目里换成订单库或平台接口，本课不接任何真实平台
+- **不问问题类型**：客户只给订单号时，按质量问题判，并在结论后补一句「若未拆封也可按 P1 退货」—— 拆封状态只有客户知道，反问会打断流程，默认 + 补充更顺
+- **三个工具、三种动作**：`listProducts()` 查清单（反问确认商品 / 答政策类问题 / 判断不在售）；`findOrders({ customer?, sku? })` 查订单 —— **不让客户背订单号**，查到先向客户确认「是这一单吗」；`checkReturnEligibility({ orderId, issue })` 判具体订单 —— 按 P1 / P2 / P3 判定 `refund` / `exchange` / `repair` / `reject` / `pending`。选它的理由：**模型只负责把客户的话归成 `issue`，天数与条款由代码算** —— 这正是「能用代码判断的业务规则别写在 instructions 里」；而且它读的 `orderId` 又是第 4 课工作记忆的字段，两课接成一条链
+- **mock 数据**：`src/mastra/data/products.ts`（在售清单，含 `repairable` 与 `rule` 规则摘要）+ `src/mastra/data/orders.ts`（7 条订单，覆盖可退 / 可换 / 修复 / 超保修 / 未签收 / 耗材可退 / 耗材不可修复全部分支）。**时间用「签收距今天数」，不用绝对日期** —— 否则 7 天 / 15 天窗口过几天就失效，课程不可复现；真实项目里换成订单库或平台接口，本课不接任何真实平台
 - **不碰脚手架自带的 `tools/weather-tool.ts`**：它是官方示例（真调 open-meteo），课里保持原样
-- **注意**：`execute(input, context)` 两个参数；裸对象工具不生效
-- **验收**：`http://localhost:4111/agents` 里问 `support-agent`「DT-7A31-X9 的金丝断裂，能换新吗？」→ 它调用 `checkReturnEligibility` 给出 `exchange` 与理由（P2）；Trace 里能看到入参 / 返回值
+- **注意**：`execute(input, context)` 两个参数；裸对象工具不生效；无入参工具（`listProducts`）的 `inputSchema` 用 `z.object({})`
+- **待验证**：`z.object({})` 这种空 schema 的工具调用是否被当前版本接受（未实跑）
+- **验收**：`http://localhost:4111/agents` 里问 `support-agent`「NX-1001 的金丝断裂，能换新吗？」→ 它调用 `checkReturnEligibility` 给出 `exchange` 与理由（P2）；Trace 里能看到入参 / 返回值
+- **工具分支要覆盖全**：耗材不换新（P5）、未拆封超 7 天不可退（P6）都要在工具里实现，不能只写在文档里
 - **不讲 `structuredOutput`**：目前**没有可跑的载体**（Studio 不支持传 schema；脚本方式在现脚手架下跑不通），已从第 3 课移除；`coverage-matrix.md` 标记为「暂不进主线」，等有 route / HTTP 载体再定
 - **文档**：`/docs/agents/tools`、`/docs/agents`、`/docs/server/request-context`
 
-### 第 4 课 · 记忆（一）：会话与工作记忆
+### 第 4 课 · 记忆（一）：长期记忆与客户档案
 
-- **目标**：给 agent 挂 `memory`：`options.lastMessages` 管最近消息；`options.workingMemory`（`enabled` + `schema`）把来访者情况跨轮记住
+- **目标**：给 agent 加**长期记忆**：`options.workingMemory`（`enabled` + `schema`）把客户情况跨 thread 记住（会话记忆第 2 课已随 agent 一起配置）
 - **依据（2026-10-01 核对 `@mastra/memory@1.33.0` 随包类型）**：`MemoryConfig` 的字段都在 `options` 下（不是扁平的）；`semanticRecall` **默认 `false`**；`workingMemory` 的 `schema` 是**合并语义**（只提交要改的字段，设 `null` 即删除）；`template` 与 `schema` 二选一
-- **只改一个文件**：`src/mastra/agents/support-agent.ts` —— memory 挂在 Agent 上；实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`），本课不动
-- **字段（`customerProfile`）**：`name` / `serial` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
-- **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`serial` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；引导逻辑写进 instructions：不知道就先问一句 → 记下来 → 之后别再问
+- **只改一个文件**：`src/mastra/agents/support-agent.ts` —— 加 `workingMemory` + 字段（会话记忆第 2 课已有，这里只补长期记忆）
+- **存储不用动**：实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`）
+- **字段（`customerProfile`）**：`name` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
+- **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；引导逻辑写进 instructions：不知道就先问一句 → 记下来 → 之后别再问
 - **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 13 课展开）
-- **验收**：问「我的金丝断裂」→ 它先问序列号 → 你答 `JS-4482-M1` → 它给出 `exchange`（P2）并记进工作记忆 → 再问「那你们什么时候安排」它直接引用刚才的答复；新建 thread 后问「我的物品序列号是多少」仍答得出
+- **验收**：新建 thread 后它仍认得这个客户（工作记忆按 `resource` 范围跨 thread 生效）
 - **待验证**：Studio 里工作记忆是否总能写入（依赖 agent 主动调 `updateWorkingMemory`）；Studio 新建 thread 时 `resourceId` 是否保持不变
-- **文档**：`/docs/memory/overview`、`/docs/memory/message-history`、`/docs/memory/working-memory`、`/docs/storage`
+- **文档**：`/docs/memory/working-memory`、`/docs/memory/overview`、`/docs/storage`
 
 ### 第 5 课 · 记忆（二）：语义召回与多用户
 
@@ -124,7 +129,7 @@
 - **依据**：官方 `docs/memory/semantic-recall`（`storage` 与 `vector` 分开传，省略时默认 LibSQL）；官方 `docs/memory/message-history` 原文「Setting `messageHistory` without `lastMessages` disables the default 10-message cap. Set both to combine a count cap with a token budget.」
 - **只改一个文件**：`src/mastra/agents/support-agent.ts`
 - **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）；Memory Processors（手动处理器与通用 Processors 一起放第 13 课）
-- **验收**：先聊「JS-4482-M1 这台的金丝断裂」→ 新建 thread 问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
+- **验收**：先聊「NX-1002 这台的金丝断裂」→ 新建 thread 问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
 - **待验证**：Studio 新建 thread 时 `resourceId` 是否不变（决定上面这条验收是否成立）；`fastembed` 首次运行会下载本地模型
 - **文档**：`/docs/memory/semantic-recall`、`/docs/memory/multi-user-threads`、`/reference/memory/memory-class`、`/reference/vectors/libsql`
 
@@ -142,7 +147,7 @@
 
 ### 第 7 课 · 工作流（一）：把问答变成流程
 
-- **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 资格校验 → 处置（换新 / 退款 / 转人工）**；在 workflow 里调 agent 与第 3 课的 `checkReturnEligibility`，客户档案来自第 4 课的工作记忆
+- **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 商品校验（不在售直接拒）→ 资格校验 → 处置（换新 / 退款 / 转人工）**；在 workflow 里调 agent 与第 3 课的 `checkReturnEligibility`，客户档案来自第 4 课的工作记忆
 - **能力**：Workflow State、Control Flow（分支）、Agents and Tools
 - **验收**：一次请求按步骤跑完，Studio 里能看到每步的输入输出
 - **文档**：`/docs/workflows/workflow-state`、`/docs/workflows/control-flow`、`/docs/workflows/agents-and-tools`
