@@ -61,6 +61,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 - **跟做步骤的文案照 `lab-ai-sdk` 的写法**：一句话、动词开头、只说做什么；`choices` 用「项 → 取值」。理由、取舍、背景**不写进步骤说明**（放知识点、延伸阅读或仓库文档）。
 - 课的 `agentPrompt` 必须**显式给出项目路径占位符**（如 `[路径名]`），并要求 agent 在位置不明确时先问用户 —— 不能依赖 agent 的当前工作目录（它可能正是课程站点仓库，会把项目建进去）。
 - 工具必须用 `createTool()`（不要用裸对象），`execute` 签名是 `execute(input, context)`。
+- **覆盖 vs 局部修改**：文件是**我们自己的**（前几课学员新建的，如 `agents/my-agent.ts`）→ 用 `replace` **整体覆盖**，和 `lab-ai-sdk` 一致；文件是**脚手架生成的**（含一大段生成配置，如 `src/mastra/index.ts` 里的 storage / logger / observability）→ 用 `edit` **只列要加/改的行**，别整段覆盖。
 
 ## 七、文档链接（`docLinks`）
 

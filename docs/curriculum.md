@@ -94,10 +94,12 @@
 
 ### 第 3 课 · 工具与结构化输出
 
-- **目标**：`createTool({ id, description, inputSchema, execute })`；让 agent 在需要时调用；用 structured output 拿结构化结果
+- **目标**：`createTool({ id, description, inputSchema, outputSchema, execute })`；写一个**自己的**工具并挂到 agent；用 structured output 拿结构化结果
 - **原则（借参考仓库阶段 2）**：**能用代码判断的业务规则，别写在 instructions 里** —— 放进工具的确定性函数，并为它写**不依赖模型**的单元测试
+- **不碰脚手架自带的 `tools/weather-tool.ts`**：它是官方示例（真调 open-meteo），课里保持原样；本课自己新建 `tools/time-tool.ts`（查时区当前时间）——顺便说明「模型算不准"现在几点"，这类确定性的事必须交给代码」
 - **注意**：`execute(input, context)` 两个参数；裸对象工具不生效
-- **验收**：问一句会触发工具；Studio 里能看到工具入参 / 返回值；`pnpm test` 里工具有确定性测试通过
+- **验收**：`http://localhost:4111/agents` 里问 my-agent「东京现在几点？」→ 它调用 `getCurrentTime` 并返回准确时间；Trace 里能看到工具入参 / 返回值
+- **待定**：`structuredOutput`（agent 级）目前**没有可跑的载体**（Studio 不支持传 schema，脚本方式已证明跑不通）→ 要么挪到第 6 课用 route 验，要么课里注明"实操见第 6 课"
 - **文档**：`/docs/agents/tools`、`/docs/agents/structured-output`、`/docs/server/request-context`
 
 ### 第 4 课 · 记忆（一）：会话与工作记忆

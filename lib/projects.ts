@@ -331,8 +331,8 @@ export const myAgent = new Agent({
         code: `// ① 顶部加一行 import
 import { myAgent } from "./agents/my-agent";
 
-// ② 在 new Mastra({ ... }) 的参数里加一项，其余配置保持不动
-agents: { myAgent },
+// ② 在 new Mastra({ ... }) 的参数里加一项 myAgent，其余配置保持不动
+agents: { weatherAgent,myAgent },
 `,
       },
     ],
@@ -342,13 +342,21 @@ agents: { myAgent },
     slug: "tools-and-structured-output",
     title: "工具与结构化输出",
     summary:
-      "让 agent 会调工具：用 createTool 定义工具、用 zod 约束入参和返回值；再让 agent 直接产出结构化对象。",
+      "让 agent 会调工具：用 createTool 定义自己的工具、用 zod 约束入参和返回值；再让 agent 直接产出结构化对象。",
+    verify: {
+      label: "去 Studio 试工具",
+      description: [
+        "打开 http://localhost:4111/agents，选 my-agent",
+        "问「东京现在几点？」→ 它调用 getCurrentTime，返回该时区的准确时间",
+        "在 Trace 里能看到工具的入参（timezone）与返回值",
+      ],
+    },
     concepts: [
       "createTool — 定义 agent 可调用的工具：id、description、inputSchema、execute；裸对象定义不会被执行",
       "inputSchema — 模型需要填的参数，用 zod 约束并写 describe 说明",
       "outputSchema — 工具的返回值也用 zod 约束，后面拿到的就是结构化数据",
       "execute(input, context) — 只有这一种签名：校验后的入参 + 执行上下文（requestContext、abortSignal 等），用不到时可省略第二个参数",
-      "tools — 传给 Agent：tools: { weatherTool }，由模型决定什么时候调用",
+      "tools — 传给 Agent：tools: { getCurrentTime }，由模型决定什么时候调用",
       "structuredOutput — agent.generate(prompt, { structuredOutput: { schema } }) 让回复直接是对象，读 response.object",
     ],
     docLinks: [
@@ -361,31 +369,35 @@ agents: { myAgent },
     ],
     files: [
       {
-        path: "src/mastra/tools/weather-tool.ts",
+        path: "src/mastra/tools/time-tool.ts",
         order: 1,
         action: "create",
-        hint: "定义第一个工具",
+        hint: "定义自己的第一个工具（脚手架自带的 weather-tool.ts 保持不动）",
         code: `import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 // 工具必须用 createTool 定义（用裸对象写不会被执行）
-export const weatherTool = createTool({
-  id: "get-weather",
-  description: "查询某个城市的当前天气",
-  // inputSchema：模型要填的参数，用 zod 约束
+export const getCurrentTime = createTool({
+  id: "get-current-time",
+  description: "查询某个时区现在的日期和时间",
+  // inputSchema：模型要填的参数，用 zod 约束，并写 describe 帮模型填对
   inputSchema: z.object({
-    location: z.string().describe("城市名，例如 上海"),
+    timezone: z.string().describe("IANA 时区名，例如 Asia/Shanghai、Asia/Tokyo"),
   }),
-  // outputSchema：返回值也约束住，后续步骤拿到的是结构化数据
+  // outputSchema：返回值也约束住，后续拿到的是结构化数据
   outputSchema: z.object({
-    location: z.string(),
-    temperatureCelsius: z.number(),
-    conditions: z.string(),
+    timezone: z.string(),
+    datetime: z.string(),
   }),
   // execute 只有这一种签名：(input, context)；用不到上下文时可省略第二个参数
-  execute: async ({ location }) => {
-    // 真实项目里这里去请求天气接口；本课先用假数据
-    return { location, temperatureCelsius: 21, conditions: "晴" };
+  execute: async ({ timezone }) => {
+    // 「现在几点」模型算不准，这类确定性的事就该交给代码
+    const datetime = new Intl.DateTimeFormat("zh-CN", {
+      timeZone: timezone,
+      dateStyle: "full",
+      timeStyle: "medium",
+    }).format(new Date());
+    return { timezone, datetime };
   },
 });
 `,
@@ -396,7 +408,7 @@ export const weatherTool = createTool({
         action: "replace",
         hint: "把工具交给 agent",
         code: `import { Agent } from "@mastra/core/agent";
-import { weatherTool } from "../tools/weather-tool.ts";
+import { getCurrentTime } from "../tools/time-tool";
 
 export const myAgent = new Agent({
   id: "my-agent",
@@ -404,42 +416,11 @@ export const myAgent = new Agent({
   instructions: \`你是一个中文技术助手。
 - 只用中文回答，回答尽量简短
 - 不确定的事情直接说不确定，不要编造
-- 问到天气时，调用 weatherTool 拿数据，再基于返回结果回答\`,
+- 问时间时，调用 getCurrentTime 拿准确时间，不要自己推算\`,
   model: "deepseek/deepseek-flash",
   // 把工具交给 agent，由模型决定什么时候调用
-  tools: { weatherTool },
+  tools: { getCurrentTime },
 });
-`,
-      },
-      {
-        path: "run-my-agent.mjs",
-        order: 3,
-        action: "replace",
-        hint: "跑一次：触发工具 + 结构化输出",
-        code: `// 运行：node run-my-agent.mjs
-import { z } from "zod";
-import { mastra } from "./src/mastra/index.ts";
-
-const agent = mastra.getAgentById("my-agent");
-
-// 1) 这句话会触发工具调用：Studio 的 Trace 里能看到工具入参与返回值
-const answer = await agent.generate("上海今天天气怎么样？");
-console.log(answer.text);
-
-// 2) 结构化输出：把回复约束成对象，直接读 response.object
-const plan = await agent.generate("给我一个今天的三步工作计划", {
-  structuredOutput: {
-    schema: z.object({
-      steps: z.array(
-        z.object({
-          title: z.string(),
-          minutes: z.number(),
-        }),
-      ),
-    }),
-  },
-});
-console.log(plan.object);
 `,
       },
     ],
