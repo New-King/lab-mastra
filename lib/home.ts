@@ -56,8 +56,9 @@ export const HOME = {
     {
       title: "本 Lab 讲什么",
       paragraphs: [
-        "项目驱动：在独立的 Mastra 项目 my-mastra-app 里逐课叠加能力，Lab 提供步骤、代码与官方文档对照。",
+        "项目驱动：在自己的 Next 项目 my-mastra-app 里逐课叠加能力（前端在 app/，Mastra 在 src/mastra/），Lab 提供步骤、代码与官方文档对照。",
         "学习路径：初始化 → Agent 与模型 → 工具与结构化输出 → 记忆 → 接自己的前端 → 工作流（编排 / 暂停恢复 / 容错定时）→ RAG → 评测 → 观测 → 安全与上线。",
+        "进阶（可选）：Subagents 与 Skills、接入外部工具（MCP）、渠道接入、Sandbox、动态工作流。",
       ],
     },
   ] satisfies HomeSection[],

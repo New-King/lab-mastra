@@ -4,7 +4,7 @@ Mastra 课程（lab-mastra）的约定。改这个仓库前先读本文件；与
 
 ## 一、信息架构
 
-- **左侧菜单 = 主线课 + 进阶课**，顺序见 `docs/curriculum.md`（主线 12 课，进阶 5 课）。
+- **左侧菜单 = 主线课 + 进阶课**，顺序见 `docs/curriculum.md`（主线 14 课，进阶 5 课）。
 - 每课页 = 跟做步骤 + 知识点 + 文件 + 代码 + 右侧官方文档（`docLinks`），可选「延伸阅读」弹窗。
 - 站点结构、组件、布局 class 与 `lab-ai-sdk` **保持一致**：`app/`、`components/`、`lib/layout-classes.ts` 直接复用 lab-ai-sdk；数据文件沿用同名 `lib/projects.ts`（`INIT_STEPS` / `NAV_ITEMS` / 类型与辅助函数）与 `lib/home.ts`。
 

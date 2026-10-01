@@ -28,12 +28,33 @@
 
 > 「参考仓库」= `my19940202/mastra-agent`，分析见 `docs/reference-repo-notes.md`。
 
+## 排列思路（与参考仓库的差异）
+
+整条主线是**能力递进链**：先把判断做准（Agent → 工具 → 工作流），再解决多轮接得住（状态 / 暂停恢复 / 容错定时），最后才接真实用户（RAG → 评测 → 观测 → 安全 → 上线）。
+
+和参考仓库「阶段 1–9」的三点结构性差异：
+
+| | 参考仓库 | 本课程 |
+|---|---|---|
+| 切法 | 按**业务里程碑**切（采集 → 充分度 → 路由 → 恢复 → 授权 → 交接） | 按**能力单元**切：记忆拆 4/5、工作流拆 7/8/9、评测与观测拆 11/12 —— 一课一能力，每课可独立验收、能中途停 |
+| 前端 | 全程 Studio 验证 | **第 6 课先打通「自己的前端」**，也是「同一个前端换后端」的证明点 |
+| 补齐 | 语义召回 / 多用户、定时与后台任务、Evals 进 CI、Guardrails、Auth 与部署、多 provider 均未覆盖 | 依次落在第 5 / 9 / 11 / 13 / 14 / 2 课（全表见 `coverage-matrix.md`） |
+
+它的**深水区主动降级**：法律域的「问题树 + 授权硬约束」只作为范例（第 4、8 课），业务换成中性场景，方便学员替换成自己的领域。
+
+**MCP / Skills 不插主线**：MCP（接外部工具）和 Skills（指令资产化）都是外延能力，不是构建 agent 应用的必经路径；插进主线会打断「能力递进」叙事、并让后面课号整体后移。放在 `## 进阶`（MCP = A2，Skills = A1），主线的工具课（第 3 课）之后如需接入，走进阶课。
+
+**一处待定的顺序差异**：参考仓库把**评测放在业务扩展之前**（阶段 5 的理由是"在收集真实线索前，证明 Agent 足够稳定"），而本课程把 RAG（第 10 课）排在 Evals（11）/ Observability（12）之前。两种取舍：
+
+- 保持现状：先把能力铺完、再做工程保障 —— 需要在第 10 课开头说明为什么先 RAG 后评测；
+- 调整顺序：把 11 / 12 提前到第 9 课之后 —— 更贴合「先稳定、再扩展」。
+
 ## 进阶（可选，按需开课）
 
 | # | 课 | 能力 | 文档 |
 |---|---|---|---|
 | A1 | Subagents 与 Skills | 多 agent 分工、可复用技能包 | `/docs/subagents`、`/docs/skills` |
-| A2 | 连接外部系统 | MCP、A2A、ACP、SDK Agents | `/docs/connections/mcp` 等 |
+| A2 | **接入外部工具（MCP）** | `MCPClient` / `MCPServer`、静态与运行时工具、工具审批与安全；另含 A2A / ACP / SDK Agents | `/docs/connections/mcp`、`/reference/tools/mcp-client`、`/reference/tools/mcp-server` |
 | A3 | 渠道接入 | Slack / Discord / Telegram / Teams / WhatsApp / GitHub | `/docs/channels` + integrations |
 | A4 | Sandbox 与 Browser | 文件系统、检索、computer、LSP、浏览器 | `/docs/sandbox/*`、`/docs/browser` |
 | A5 | 动态工作流与 Code Mode | Runtime 决定流程；让模型写代码调用工具 | `/docs/workflows/dynamic-workflows`、`/docs/agents/code-mode` |

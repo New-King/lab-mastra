@@ -37,7 +37,8 @@
 | | Channels | 进阶 A3 |
 | | Sandboxes（Filesystem / Search / Computer / LSP） | 进阶 A4 |
 | | Browser | 进阶 A4 |
-| | Connections（MCP / A2A / ACP / SDK Agents） | 进阶 A2 |
+| | Connections（MCP）| 进阶 A2（`MCPClient` / `MCPServer`、静态与运行时工具、工具审批、安全边界） |
+| | Connections（A2A / ACP / SDK Agents） | 进阶 A2（次要项） |
 | **Develop / Deploy** | Storage | 第 4 课（基础）、第 14 课（生产） |
 | | Server（Adapters / Custom API Routes / Client） | 第 6 课 |
 | | Server（Middleware / Request Context） | 第 14 课（RequetContext 第 3 课已有基础） |
