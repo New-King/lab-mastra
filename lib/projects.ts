@@ -152,24 +152,30 @@ export const PROJECT_DIR = "my-mastra-app";
 export const INIT_STEPS: CommandStep[] = [
   {
     description: "在你选定的目录下创建 Next.js 项目（根 app/ 目录，与 lab-ai-sdk 一致）。",
-    command: `npx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`,
+    command: `pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`,
   },
   {
     description: "初始化 Mastra，生成 src/mastra/。",
-    command: `cd ${PROJECT_DIR} && npx --force mastra@latest init`,
+    command: `cd ${PROJECT_DIR} && pnpm dlx mastra@latest init`,
     choices: [
-      "模型提供商 → 任选一个（列表里没有 DeepSeek）",
-      "API Key → 留空；必填时填占位符",
-      "其余提问 → 回车用默认值",
+      "创建位置 → 默认 src/（回车）",
+      "默认模型提供商 → OpenAI（列表里没有 DeepSeek）",
+      "API Key → 留空即可",
+      "Enable Mastra Observability → No",
+      "编码助手工具 → 按需（会在项目里写入 skills 文件）",
     ],
   },
   {
+    description: "删掉脚手架建的 git 仓库。",
+    command: "rm -rf .git",
+  },
+  {
     description: "启动 Studio（Mastra 调试界面）：http://localhost:4111。",
-    command: "npx mastra dev",
+    command: "pnpm exec mastra dev",
   },
   {
     description: "另开一个终端启动前端：http://localhost:3000。",
-    command: "npm run dev",
+    command: "pnpm dev",
   },
 ];
 
@@ -180,22 +186,32 @@ export const NAV_ITEMS: NavItem[] = [
     title: "初始化",
     agentPrompt: `创建这个课程的学员项目：一个 Next.js 应用，并在其中初始化 Mastra。
 
-开始前先确认下面两件事，一次问一个、等我回答再问下一个；我已经说过的就不用问：
+目标位置：<父目录>/${PROJECT_DIR}（不要用当前工作目录，不要建在已有项目的目录里）
+DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
 
-- 建在哪个目录？（必问，不要用当前工作目录，也不要在已有项目的目录里创建）
-- DEEPSEEK_API_KEY？（写进项目根目录的 .env，不要编造）
+只有下面两件事需要问我，一次问一个、等我回答再问下一个；我已经说过的就不用问：
 
-然后严格按下面步骤执行，不要自行发挥：
+1. 建在哪个目录？
+2. DEEPSEEK_API_KEY 是多少？
 
-1. 进入 <目录>，执行 npx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias
-2. 进入 ${PROJECT_DIR}，执行 npx --force mastra@latest init（模型提供商任选一个——列表里没有 DeepSeek；API Key 若必填就填占位符 sk-placeholder；其余按默认）
-3. 在项目根目录的 .env 里补上 DEEPSEEK_API_KEY=<key>
-4. 后台启动 Studio：npx mastra dev（http://localhost:4111）
-5. 后台启动前端：npm run dev（http://localhost:3000）
-6. 告诉我两个地址，以及 Studio 里第一步该点哪里验收
+其余全部按下面执行，不要为细节反复找我确认。
 
-限制：不安装 ai-elements；不额外引入 provider、云服务或依赖；不替我 git commit / git push；只改上述范围内的文件。
-完成后列出改动过的文件清单。`,
+执行步骤：
+
+1. 进入 <父目录>，执行 pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias
+2. 进入 ${PROJECT_DIR}，执行 pnpm dlx mastra@latest init，交互项按下表选，未列出的项用默认值：
+   - 创建位置 → 默认 src/
+   - 默认模型提供商 → OpenAI（列表里没有 DeepSeek；第 2 课会换成 deepseek/deepseek-flash）
+   - API Key → 留空
+   - Enable Mastra Observability → No（若仍装上 @mastra/observability 或生成相关配置，保持原样，别手改）
+   - 编码助手工具 → 按需（装了会在项目里写入 skills 文件）
+3. 删掉脚手架建的 git 仓库：rm -rf .git
+4. 在项目根目录新建 .env，只写 DEEPSEEK_API_KEY=<key>；不要写其他 provider 的占位 key
+5. 后台启动 Studio：pnpm exec mastra dev（默认 http://localhost:4111）
+6. 后台启动前端：pnpm dev（默认 http://localhost:3000）
+7. 最后统一汇报：两个实际访问地址、Studio 里第一步该点哪里验收（若没有任何 agent / workflow，就直说没有可点的对象）、改动过的文件清单，以及所有与上面步骤不一致之处
+
+约束：端口被占就自己换（Next / Mastra 会自动选下一个端口），不要 kill 别人的进程；允许只读探测（如 --help、查端口占用）；不改生成代码、不装 ai-elements、不额外引入 provider / 云服务 / 依赖；不替我 git commit / git push（脚手架自带的 git init 和 initial commit 属正常）；只改上述范围内的文件。`,
     docLinks: [
       {
         title: "Next.js 集成",
@@ -214,7 +230,7 @@ export const NAV_ITEMS: NavItem[] = [
       },
       {
         path: ".env",
-        hint: "打开 .env，补上 DEEPSEEK_API_KEY（Mastra 会自动读取）：",
+        hint: "打开 .env，把变量名改成 DEEPSEEK_API_KEY（init 写的是所选 provider 的名字；Mastra 按模型前缀读对应变量）：",
         steps: [
           {
             description: `先进入 ${PROJECT_DIR} 项目目录，再打开 .env。`,

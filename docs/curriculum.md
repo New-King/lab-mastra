@@ -46,14 +46,15 @@
 
 - **目标**：跑通 Next 一体化项目（前端 `app/` + Mastra `src/mastra/`），Studio 里能看到示例 agent
 - **命令**（官方 Next.js 指南的写法）：
-  - `npx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
-  - `cd my-mastra-app && npx --force mastra@latest init`（生成 `src/mastra/`，含示例 agent / 工具；provider 任选，脚手架列表里没有 DeepSeek）
-  - `.env` 补 `DEEPSEEK_API_KEY`（`init` 已按所选 provider 写了一份，保留即可）
-  - `npx mastra dev` → Studio `http://localhost:4111`；另开一个终端 `npm run dev` → 应用 `http://localhost:3000`
+  - `pnpm dlx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
+  - `cd my-mastra-app && pnpm dlx mastra@latest init`；实测交互项：创建位置（默认 `src/`）→ 默认模型提供商（**列表里没有 DeepSeek**）→ API Key（可留空）→ Enable Mastra Observability（选 `No`）→ 编码助手工具（按需）
+  - `.env` 补 `DEEPSEEK_API_KEY`（`init` 写的是所选 provider 的 key，另加一行即可）
+  - `pnpm exec mastra dev` → Studio `http://localhost:4111`；另开一个终端 `pnpm dev` → 应用 `http://localhost:3000`
 - **知识点**：Mastra 实例、Studio、Model Router（`provider/model` 字符串）
 - **验收**：Studio 打开并看到示例 agent；两个 dev 命令互不干扰
 - **文档**：`/guides/getting-started/next-js`、`/docs/studio/overview`、`/models/providers/deepseek`
-- **待验证**：官方 Next.js 指南页**没提 Studio**，`mastra dev` 与 `next dev` 在同一项目里并存需首次实跑确认；另 `create-mastra` 参考页的部分参数（`--default` / `--components` / `--dir` / `--mcp`）在已发布版本里不存在，写课时以本机 `--help` 为准
+- **实测记录**（2026-09-30，`mastra@1.31.4`）：`init` 生成 `src/mastra/{index.ts, agents/weather-agent.ts, tools/weather-tool.ts, workflows/weather-workflow.ts}`；写入依赖 `@mastra/core`、`@mastra/libsql`、`@mastra/memory`、`@mastra/duckdb`、`@mastra/observability`、`@mastra/loggers`、`mastra`、`zod`；**不往 `package.json` 加脚本**（所以 Studio 用 `pnpm exec mastra dev`）；**会改写项目根的 `AGENTS.md` / `CLAUDE.md`，并写入 `.agents/` + `skills-lock.json`**；结尾的 `PostHogFetchNetworkError` 只是遥测上报失败，不影响初始化（可用 `MASTRA_TELEMETRY_DISABLED=1` 消除）
+- **待验证**：`pnpm exec mastra dev` 与 `pnpm dev` 在同一项目里并行运行；`create-next-app` 的 `--no-react-compiler` / `--no-import-alias` 写法（未出现在 `--help` 里）
 
 ### 第 2 课 · Agent 与模型
 

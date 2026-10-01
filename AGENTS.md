@@ -39,7 +39,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 | 课 | 新增 | 覆盖 |
 |---|---|---|
-| 1 | Next 一体化脚手架（`npx create-next-app` + `npx --force mastra@latest init`） | — |
+| 1 | Next 一体化脚手架（`pnpm dlx create-next-app` + `pnpm dlx mastra@latest init`） | — |
 | 2 | — | `src/mastra/agents/*.ts` |
 | 3 | `src/mastra/tools/*.ts` | agent |
 | 4–5 | — | agent 的 memory 配置 |
