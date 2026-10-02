@@ -90,7 +90,7 @@
 
 | 我们补的能力 | 课 |
 |---|---|
-| **接入前端**（`handleChatStream()` + AI SDK UI，复用 lab-ai-sdk 第 4 课页面） | 第 6 课 |
+| **接入前端**（`handleChatStream()` + AI SDK UI，页面自己写：正文 / 思考 / 工具卡都渲染） | 第 6 课 |
 | Semantic Recall / `scope`（`thread` + `resource`） | 第 5 课 |
 | 定时任务与后台任务（Scheduled Workflows / Background Tasks / Schedules） | 第 9 课 |
 | Guardrails 与 Processors（注入防护、输出脱敏） | 第 13 课 |

@@ -899,15 +899,18 @@ export const supportAgent = new Agent({
     title: "接入前端：用 AI SDK UI 聊天",
     menuTitle: "接入前端",
     summary:
-      "给 agent 配一个网页聊天界面：加一个 API 路由把 agent 的输出转成 AI SDK 的消息流，前端用 useChat 消费。",
+      "给 agent 配一个网页聊天界面：加一个 API 路由把 agent 的输出转成 AI SDK 的消息流，前端把正文、思考、工具调用都渲染出来。",
     install: {
-      command: "pnpm add @mastra/ai-sdk@latest @ai-sdk/react ai",
-      description: "在 my-mastra-app 目录执行 —— 把 agent 的输出转成 AI SDK 的消息流，页面才接得上。",
+      command:
+        "pnpm add @mastra/ai-sdk@latest @ai-sdk/react ai react-markdown remark-gfm",
+      description:
+        "在 my-mastra-app 目录执行 —— 把 agent 的输出转成 AI SDK 的消息流；react-markdown + remark-gfm 渲染正文里的 markdown（表格靠它）。",
     },
     verify: {
       label: "打开页面验证",
       description: [
-        "打开 http://localhost:3000，聊一句，刷新页面历史还在（说明消息落进了数据库）",
+        "打开 http://localhost:3000，聊一句「我的刀能退吗」",
+        "能看到思考块、工具卡（入参 / 结果）和 markdown 表格；刷新页面历史还在",
         "这是一个接在自定义前端上的客服 agent，不依赖 Studio",
       ],
     },
@@ -918,6 +921,8 @@ export const supportAgent = new Agent({
       "getMemory / recall — 从 agent 拿到 memory，按对话 id + 客户 id 读回历史消息",
       "version — handleChatStream 与 toAISdkMessages 要和你装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）",
       "前端怎么接 — AI SDK 的 useChat：用 DefaultChatTransport 指定 api（/api/generate）和 body（chatId），POST 发消息、GET 水合历史、DELETE 清空；后端换成 Mastra 后这套协议不用改",
+      "UIMessage.parts — 一条消息是 part 数组：text（正文）、reasoning（思考）、tool-xxx（工具调用与结果）、step-start（分步）；模型的过程都在流里，渲不渲染由前端决定",
+      "前端渲染 — 正文用 react-markdown + remark-gfm 渲染（表格靠 remark-gfm）；思考和工具各做成可折叠块，工具卡展示入参 / 结果",
     ],
     docLinks: [
       { title: "Vercel AI SDK 官网", href: "https://ai-sdk.dev" },
@@ -1006,14 +1011,357 @@ export async function DELETE(req: Request) {
         path: "app/page.tsx",
         order: 2,
         action: "create",
-        hint: "前端页面：useChat + DefaultChatTransport 消费 /api/generate，含刷新水合（GET）与清空对话（DELETE）",
+        hint: "前端页面：useChat + DefaultChatTransport 消费 /api/generate；遍历 message.parts，把正文（markdown）、思考（折叠块）、工具调用（入参 / 结果）分别渲染出来；含刷新水合（GET）与清空对话（DELETE）",
         code: `"use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import { useEffect, useState } from "react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const CHAT_ID = "default";
+
+/* ============================ 图标（内联 SVG） ============================ */
+
+function IconChevron({ open, className = "" }: { open: boolean; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={\`\${className} transition-transform duration-200 \${open ? "rotate-90" : ""}\`}
+    >
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function IconThinking({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 3l1.7 5.6L19 10l-5.3 1.4L12 17l-1.7-5.6L5 10l5.3-1.4L12 3z" />
+    </svg>
+  );
+}
+
+function IconTool({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="7" y="7" width="10" height="10" rx="2.5" />
+      <path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4" />
+    </svg>
+  );
+}
+
+function IconAlert({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M12 4.5l8.5 15h-17l8.5-15z" />
+      <path d="M12 10v4M12 16.5h.01" />
+    </svg>
+  );
+}
+
+/* ============================ 折叠卡片外壳 ============================ */
+
+function Collapsible({
+  icon,
+  title,
+  hint,
+  tone = "neutral",
+  defaultOpen = false,
+  children,
+}: {
+  icon: ReactNode;
+  title: ReactNode;
+  hint?: ReactNode;
+  tone?: "neutral" | "error";
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="-mx-1 flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-zinc-50"
+      >
+        <span className={tone === "error" ? "text-red-500" : "text-zinc-400"}>{icon}</span>
+        <span className="truncate text-[15px] text-zinc-700">{title}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+          {hint}
+          <IconChevron open={open} className="size-4 text-zinc-300" />
+        </span>
+      </button>
+      {open && <div className="pt-1.5">{children}</div>}
+    </div>
+  );
+}
+
+/* ============================ 思考过程 ============================ */
+
+function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  return (
+    <Collapsible
+      icon={<IconThinking className="size-[18px]" />}
+      title="思考"
+      defaultOpen
+      hint={streaming ? <span className="text-xs text-zinc-300">思考中…</span> : undefined}
+    >
+      <p className="whitespace-pre-wrap pl-6 text-[15px] leading-7 text-zinc-600">{text}</p>
+    </Collapsible>
+  );
+}
+
+/* ============================ 工具调用 ============================ */
+
+type ToolPartLike = {
+  type: string;
+  state?: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+};
+
+function formatValue(value: unknown): string {
+  if (value === undefined) return "（还没有）";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function statusOf(state?: string) {
+  switch (state) {
+    case "output-available":
+      return { label: "完成", tone: "ok" as const };
+    case "output-error":
+      return { label: "失败", tone: "error" as const };
+    case "input-streaming":
+      return { label: "参数生成中", tone: "busy" as const };
+    default:
+      return { label: "调用中", tone: "busy" as const };
+  }
+}
+
+function ToolCard({ part }: { part: ToolPartLike }) {
+  const name = part.type.replace(/^tool-/, "");
+  const { label, tone } = statusOf(part.state);
+  const hasError = Boolean(part.errorText);
+  const hasOutput = part.output !== undefined;
+
+  // 出错只显示错误；正常则「入参 + 结果」都显示（还没出结果时只显示入参）
+  const blocks: { label?: string; value: string }[] = hasError
+    ? [{ value: part.errorText ?? "" }]
+    : hasOutput
+      ? [
+          { label: "入参", value: formatValue(part.input) },
+          { label: "结果", value: formatValue(part.output) },
+        ]
+      : [{ value: formatValue(part.input) }];
+
+  return (
+    <Collapsible
+      tone={hasError ? "error" : "neutral"}
+      icon={
+        hasError ? <IconAlert className="size-[18px]" /> : <IconTool className="size-[18px]" />
+      }
+      title={name}
+      hint={tone === "busy" ? <span className="text-xs text-zinc-300">{label}…</span> : undefined}
+    >
+      <div className="space-y-2">
+        {blocks.map((block, index) => (
+          <div key={index}>
+            {block.label && (
+              <p className="mb-1 pl-1 text-xs text-zinc-400">{block.label}</p>
+            )}
+            <pre
+              className={\`max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl px-4 py-3 font-mono text-[13px] leading-6 \${
+                hasError
+                  ? "bg-red-50 text-red-700"
+                  : "bg-zinc-50 text-zinc-700 ring-1 ring-zinc-100"
+              }\`}
+            >
+              {block.value}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </Collapsible>
+  );
+}
+
+/* ============================ markdown ============================ */
+
+function TableBlock({ children }: { children?: ReactNode }) {
+  const ref = useRef<HTMLTableElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  function copyAsMarkdown() {
+    const table = ref.current;
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll("tr")).map((row) =>
+      Array.from(row.querySelectorAll("th, td")).map((cell) =>
+        (cell.textContent ?? "").trim().replace(/\\s+/g, " "),
+      ),
+    );
+    if (rows.length === 0) return;
+    const [header, ...body] = rows;
+    const markdown = [
+      \`| \${header.join(" | ")} |\`,
+      \`| \${header.map(() => "---").join(" | ")} |\`,
+      ...body.map((row) => \`| \${row.join(" | ")} |\`),
+    ].join("\\n");
+    void navigator.clipboard?.writeText(markdown);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="my-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={copyAsMarkdown}
+          className="mb-1 rounded-md px-2 py-0.5 text-xs text-zinc-400 hover:bg-zinc-50 hover:text-zinc-600"
+        >
+          {copied ? "已复制" : "复制表格"}
+        </button>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-zinc-200">
+        <div className="overflow-x-auto">
+          <table ref={ref} className="w-full border-collapse text-[15px]">
+            {children}
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="my-2 leading-7 first:mt-0 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
+  li: ({ children }) => <li className="leading-7">{children}</li>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-blue-600 underline underline-offset-2"
+    >
+      {children}
+    </a>
+  ),
+  h1: ({ children }) => <h3 className="mt-4 mb-2 text-base font-semibold">{children}</h3>,
+  h2: ({ children }) => <h3 className="mt-4 mb-2 text-base font-semibold">{children}</h3>,
+  h3: ({ children }) => <h4 className="mt-3 mb-1.5 text-sm font-semibold">{children}</h4>,
+  strong: ({ children }) => <strong className="font-semibold text-zinc-900">{children}</strong>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-l-2 border-zinc-200 pl-3 text-zinc-600">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-4 border-zinc-100" />,
+  pre: ({ children }) => (
+    <pre className="my-3 overflow-x-auto rounded-lg bg-zinc-900 px-3 py-2.5 font-mono text-[12.5px] leading-6 text-zinc-100">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children }) => {
+    const isBlock = typeof className === "string" && className.startsWith("language-");
+    if (isBlock) return <code className="font-mono">{children}</code>;
+    return (
+      <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.85em] text-zinc-800">
+        {children}
+      </code>
+    );
+  },
+  table: ({ children }) => <TableBlock>{children}</TableBlock>,
+  thead: ({ children }) => <thead className="text-zinc-400">{children}</thead>,
+  tbody: ({ children }) => <tbody className="divide-y divide-zinc-100">{children}</tbody>,
+  tr: ({ children }) => <tr>{children}</tr>,
+  th: ({ children }) => (
+    <th className="whitespace-nowrap border-b border-zinc-100 px-4 py-2.5 text-left text-[13px] font-medium">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => <td className="px-4 py-2.5 align-top">{children}</td>,
+};
+
+function Markdown({ children }: { children: string }) {
+  return (
+    <div className="text-[15px] leading-7 text-zinc-800">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/* ============================ 消息 ============================ */
+
+function AssistantMessage({ message }: { message: UIMessage }) {
+  return (
+    <div className="w-full space-y-2">
+      {message.parts.map((part, index) => {
+        if (part.type === "text") {
+          if (!part.text.trim()) return null;
+          return <Markdown key={index}>{part.text}</Markdown>;
+        }
+        if (part.type === "reasoning") {
+          if (!part.text.trim()) return null;
+          return (
+            <ReasoningBlock
+              key={index}
+              text={part.text}
+              streaming={part.state === "streaming"}
+            />
+          );
+        }
+        if (part.type.startsWith("tool-")) {
+          return <ToolCard key={index} part={part as unknown as ToolPartLike} />;
+        }
+        if (part.type === "step-start") {
+          return <div key={index} className="my-2 h-px bg-zinc-100" />;
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
+/* ============================ 页面 ============================ */
 
 export default function Home() {
   const { messages, setMessages, sendMessage, status, stop, error } = useChat({
@@ -1035,6 +1383,7 @@ export default function Home() {
   });
   const [input, setInput] = useState("");
   const loading = status === "streaming" || status === "submitted";
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch(\`/api/generate?chatId=\${CHAT_ID}\`)
@@ -1047,6 +1396,13 @@ export default function Home() {
       .catch(() => {});
   }, [setMessages]);
 
+  // 新内容进来时贴着底部滚动（Studio 也是这个行为）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, status]);
+
   // 清空记录：服务端删掉存档，本地消息也清掉，界面立刻变空
   async function handleClear() {
     await fetch("/api/generate?chatId=" + CHAT_ID, { method: "DELETE" });
@@ -1055,12 +1411,12 @@ export default function Home() {
 
   return (
     <div className="flex flex-1 flex-col items-center px-4 py-8 font-sans">
-      <main className="flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4">
+      <main className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-4">
         <header className="flex shrink-0 items-start justify-between gap-4">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight">多轮对话</h1>
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold tracking-tight">虚拟宇宙公司 · 客服</h1>
             <p className="text-sm text-zinc-500">
-              连续聊天；消息保存在服务端 .chats/，刷新后自动恢复。
+              对话存在 Mastra memory 里（thread: {CHAT_ID}），刷新自动恢复。
             </p>
           </div>
           <button
@@ -1073,42 +1429,44 @@ export default function Home() {
           </button>
         </header>
 
-        <div className="min-h-[240px] flex-1 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4">
+        <div
+          ref={scrollRef}
+          className="min-h-[280px] flex-1 overflow-y-auto rounded-xl border border-zinc-200 bg-white px-4 py-5"
+        >
           {messages.length === 0 ? (
-            <p className="text-sm text-zinc-400">发送第一条消息开始对话</p>
+            <p className="text-sm text-zinc-400">
+              发送第一条消息开始对话，比如「我这单能退吗」
+            </p>
           ) : (
-            <ul className="space-y-4">
+            <ul className="space-y-6">
               {messages.map((message) => (
-                <li
-                  key={message.id}
-                  className={
-                    message.role === "user" ? "flex justify-end" : "flex justify-start"
-                  }
-                >
-                  <div
-                    className={
-                      message.role === "user"
-                        ? "max-w-[85%] rounded-lg bg-zinc-900 px-3 py-2 text-sm leading-6 text-white"
-                        : "max-w-[85%] rounded-lg bg-zinc-100 px-3 py-2 text-sm leading-6 text-zinc-900"
-                    }
-                  >
-                    {message.parts.map((part, index) =>
-                      part.type === "text" ? (
-                        <span key={index} className="whitespace-pre-wrap">
-                          {part.text}
-                        </span>
-                      ) : null,
-                    )}
-                  </div>
+                <li key={message.id}>
+                  {message.role === "user" ? (
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-zinc-900 px-3.5 py-2 text-sm leading-6 text-white">
+                        {message.parts.map((part, index) =>
+                          part.type === "text" ? (
+                            <span key={index}>{part.text}</span>
+                          ) : null,
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <AssistantMessage message={message} />
+                  )}
                 </li>
               ))}
+              {loading && (
+                <li className="flex items-center gap-2 text-sm text-zinc-400">
+                  <span className="size-1.5 animate-pulse rounded-full bg-zinc-400" />
+                  正在生成…
+                </li>
+              )}
             </ul>
           )}
         </div>
 
-        {error && (
-          <p className="shrink-0 text-sm text-red-600">{error.message}</p>
-        )}
+        {error && <p className="shrink-0 text-sm text-red-600">{error.message}</p>}
 
         <form
           className="shrink-0 space-y-2"
@@ -1119,44 +1477,56 @@ export default function Home() {
             setInput("");
           }}
         >
-          <label className="block text-sm font-medium">
-            消息
-            <textarea
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              rows={2}
-              placeholder="输入消息…"
-              className="mt-1 w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-            />
-          </label>
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            rows={2}
+            placeholder="输入消息…（Enter 发送，Shift + Enter 换行）"
+            className="w-full resize-none rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+          />
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
+            <SendButton type="submit" disabled={loading || !input.trim()}>
               {loading ? "回复中…" : "发送"}
-            </button>
+            </SendButton>
             {loading && (
-              <button
+              <SendButton
                 type="button"
+                variant="ghost"
                 onClick={() => stop()}
-                className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
               >
                 停止
-              </button>
+              </SendButton>
             )}
           </div>
         </form>
       </main>
     </div>
+  );
+}
+
+function SendButton({
+  variant = "solid",
+  className = "",
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "solid" | "ghost" }) {
+  const base =
+    "rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 transition-colors";
+  const styles =
+    variant === "solid"
+      ? "bg-zinc-900 text-white hover:bg-zinc-800"
+      : "border border-zinc-200 text-zinc-700 hover:bg-zinc-50";
+  return (
+    <button className={\`\${base} \${styles} \${className}\`} {...props}>
+      {children}
+    </button>
   );
 }`,
       },
