@@ -90,7 +90,7 @@
 - **会话记忆在这里就配**：`memory: new Memory({ options: { lastMessages: 20 } })` —— 不配的话每轮只看到最新一条消息，多轮对话接不上（Studio 只发新消息，历史由服务端 memory 提供）
 - **场景（全课统一）**：agent = **虚拟宇宙公司官方客服**（`id: "support-agent"`，文件 `src/mastra/agents/support-agent.ts`），卖武器、装备与药剂，货币用**黑龙币**；事实底本见 `docs/scenario.md`。选它的理由：客服天然有**规则可算**（退换窗口 / 修复）、**政策可查**（P1–P5）、**审批有后果**（补偿上限）、**数据敏感**（通讯号 / 收货坐标）、**多客户要隔离** —— 第 7/8/9/10/11/13/14 课全都有硬落点
 - **注意**：注册 agent 是往 `src/mastra/index.ts` **加两处**（顶部 `import` + `new Mastra({ agents })` 里加一项），**不要整体覆盖** —— scaffold 生成的文件里有 `storage` / `logger` / `observability`，覆盖就丢
-- **验收**：打开 `http://localhost:4111/agents`，跟 `support-agent` 对话；问「我的刀坏了」它会按在售清单反问是不是 S 级飞刀；问「我的机甲坏了」它直接说明不在售后范围（说明 instructions 生效）
+- **验收**：打开 `http://localhost:4111/agents`，跟 `support-agent` 对话；问「我的刀坏了」它直接对上 S 级飞刀并给出处置；问「我的机甲坏了」它直接说明不在售后范围（说明 instructions 生效）
 - **不做命令行脚本**：裸 `node` 跑 `src/mastra/index.ts` 不可行（无扩展名导入 + top-level await，`node` / `tsx` 都撞墙）；要用 HTTP 验证就等第 6 课的 `app/api/generate/route.ts`
 - **文档**：`/docs/agents`、`/docs/models`、`/models/providers/deepseek`
 
@@ -99,7 +99,7 @@
 - **目标**：`createTool({ id, description, inputSchema, outputSchema, execute })`；写一个**自己的**工具并挂到 agent
 - **原则（借参考仓库阶段 2）**：**能用代码判断的业务规则，别写在 instructions 里** —— 放进工具的确定性函数，并为它写**不依赖模型**的单元测试
 - **不问问题类型**：客户只给订单号时，按质量问题判，并在结论后补一句「若未拆封也可按 P1 退货」—— 拆封状态只有客户知道，反问会打断流程，默认 + 补充更顺
-- **三个工具、三种动作**：`listProducts()` 查清单（反问确认商品 / 答政策类问题 / 判断不在售）；`findOrders({ customer?, sku? })` 查订单 —— **不让客户背订单号**，查到先向客户确认「是这一单吗」；`checkReturnEligibility({ orderId, issue })` 判具体订单 —— 按 P1 / P2 / P3 判定 `refund` / `exchange` / `repair` / `reject` / `pending`。选它的理由：**模型只负责把客户的话归成 `issue`，天数与条款由代码算** —— 这正是「能用代码判断的业务规则别写在 instructions 里」；而且它读的 `orderId` 又是第 4 课工作记忆的字段，两课接成一条链
+- **三个工具、三种动作**：`listProducts()` 查清单（对上商品 / 答政策类问题 / 判断不在售）；`findOrders({ sku? })` 查订单 —— **不让客户背订单号**，对得上商品直接查、直接判；`checkReturnEligibility({ orderId, issue })` 判具体订单 —— 按 P1 / P2 / P3 判定 `refund` / `exchange` / `repair` / `reject` / `pending`。选它的理由：**模型只负责把客户的话归成 `issue`，天数与条款由代码算** —— 这正是「能用代码判断的业务规则别写在 instructions 里」；而且它读的 `orderId` 又是第 4 课工作记忆的字段，两课接成一条链
 - **mock 数据**：`src/mastra/data/products.ts`（在售清单，含 `repairable` 与 `rule` 规则摘要）+ `src/mastra/data/orders.ts`（7 条订单，覆盖可退 / 可换 / 修复 / 超保修 / 未签收 / 耗材可退 / 耗材不可修复全部分支）。**时间用「签收距今天数」，不用绝对日期** —— 否则 7 天 / 15 天窗口过几天就失效，课程不可复现；真实项目里换成订单库或平台接口，本课不接任何真实平台
 - **不碰脚手架自带的 `tools/weather-tool.ts`**：它是官方示例（真调 open-meteo），课里保持原样
 - **注意**：`execute(input, context)` 两个参数；裸对象工具不生效；无入参工具（`listProducts`）的 `inputSchema` 用 `z.object({})`
@@ -115,7 +115,7 @@
 - **依据（2026-10-01 核对 `@mastra/memory@1.33.0` 随包类型）**：`MemoryConfig` 的字段都在 `options` 下（不是扁平的）；`semanticRecall` **默认 `false`**；`workingMemory` 的 `schema` 是**合并语义**（只提交要改的字段，设 `null` 即删除）；`template` 与 `schema` 二选一
 - **只改一个文件**：`src/mastra/agents/support-agent.ts` —— 加 `workingMemory` + 字段（会话记忆第 2 课已有，这里只补长期记忆）
 - **存储不用动**：实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`）
-- **字段（`customerProfile`）**：`name` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
+- **字段（`customerProfile`）**：`sku` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
 - **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；引导逻辑写进 instructions：不知道就先问一句 → 记下来 → 之后别再问
 - **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 13 课展开）
 - **验收**：新建 thread 后它仍认得这个客户（工作记忆按 `resource` 范围跨 thread 生效）

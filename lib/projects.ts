@@ -340,16 +340,11 @@ export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
   // instructions 相当于系统提示：写清角色、职责和回答方式，agent 每轮都遵守
-  instructions: \`你是虚拟宇宙公司官方客服。
-- 职责：帮客户解决武器、装备与药剂的问题（退换、修复、运输）
-- 我们在售商品只有四种：遁天梭、金丝网、S 级飞刀、生命之水
-- 客户说的商品含糊时，按这份清单反问确认是哪一件；不在清单里的商品，直接说明无法受理，不要再问订单号
-- 客户只问某件商品的政策（能不能退 / 换 / 修）时，按上面的在售清单直接回答，不必查订单
-- 要判具体订单时才需要订单号；客户不记得，就先问一句怎么称呼（下一课接上工具后就能按客户查订单）
-- 客户说了「坏了 / 故障 / 不能用」就按质量问题判，说了「没拆封 / 不要了」就按未拆封判，不必反问
-- 客户只给了订单号、没说问题类型时：按质量问题判，并在结论后补一句「若未拆封，也可按 P1 在 7 天内退货」，不要反问他
-- 只承诺售后政策内的处置，政策外的一律说「需要主管确认」
-- 中文、简短、专业，不卖萌\`,
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+- 在售商品只有四种：遁天梭、金丝网、S 级飞刀、生命之水；其它的一律不受理
+- 售后规则：P1 签收 7 天内未拆封可退；P2 签收 15 天内质量问题可换新；P3 一年保修期内可修复（耗材不适用）
+- 能用上面的清单和规则解决的，直接判，不要问客户
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   // 模型写成 "provider/model" 字符串，Mastra 会自动读取 DEEPSEEK_API_KEY
   model: "deepseek/deepseek-flash",
   // 会话记忆：把最近 20 条消息带回上下文，多轮对话才接得上
@@ -407,8 +402,8 @@ agents: { weatherAgent, supportAgent },
         path: "src/mastra/data/products.ts",
         order: 1,
         action: "create",
-        hint: "在售商品清单 —— 客服的反问选项与判定规则都以它为准",
-        code: `// 在售商品清单：客服反问的选项、以及判定规则，都以它为准
+        hint: "在售商品清单 —— 客服对商品名、以及判定规则，都以它为准",
+        code: `// 在售商品清单：对商品名、以及判定规则，都以它为准
 export type Product = {
   sku: string;
   price: number; // 黑龙币
@@ -444,16 +439,17 @@ export type Order = {
   address: string; // 收货地址（第 13 课用来讲 PII 脱敏）
 };
 
+// 客户只有一个（罗峰先生）：这就是一份共享 mock，谁问都是他这 7 条订单
 // 时间一律用「距今天数」而不是固定日期：课程任何时候跑，判定结果都一样
-// 5 条数据刻意覆盖全部分支：可退 / 可换 / 保修内 / 超保修 / 未签收
+// 7 条刻意覆盖全部分支：可退 / 可换 / 保修内 / 超保修 / 未签收 / 超 15 天换新期
 export const orders: Order[] = [
-  { orderId: "NX-1001", customer: "林悦", sku: "遁天梭", price: 24999, deliveredDaysAgo: 6, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 8 号住所" },
-  { orderId: "NX-1002", customer: "陈默", sku: "金丝网", price: 1299, deliveredDaysAgo: 13, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 21 号住所" },
-  { orderId: "NX-1003", customer: "苏航", sku: "S 级飞刀", price: 899, deliveredDaysAgo: 420, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 5 号住所" },
-  { orderId: "NX-1004", customer: "周嘉", sku: "遁天梭", price: 24999, deliveredDaysAgo: 200, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 12 号住所" },
-  { orderId: "NX-1005", customer: "郑一", sku: "生命之水", price: 399, deliveredDaysAgo: null, logistics: "运输中（星际运输队）", logisticsStuckDays: 5, address: "地球·江南基地市 3 号仓库" },
-  { orderId: "NX-1006", customer: "何清", sku: "生命之水", price: 399, deliveredDaysAgo: 30, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 6 号住所" },
-  { orderId: "NX-1007", customer: "秦朗", sku: "生命之水", price: 399, deliveredDaysAgo: 3, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 9 号住所" },
+  { orderId: "NX-1001", customer: "罗峰先生", sku: "遁天梭", price: 24999, deliveredDaysAgo: 6, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 8 号住所" },
+  { orderId: "NX-1002", customer: "罗峰先生", sku: "金丝网", price: 1299, deliveredDaysAgo: 13, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 21 号住所" },
+  { orderId: "NX-1003", customer: "罗峰先生", sku: "S 级飞刀", price: 899, deliveredDaysAgo: 420, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 5 号住所" },
+  { orderId: "NX-1004", customer: "罗峰先生", sku: "遁天梭", price: 24999, deliveredDaysAgo: 200, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 12 号住所" },
+  { orderId: "NX-1005", customer: "罗峰先生", sku: "生命之水", price: 399, deliveredDaysAgo: null, logistics: "运输中（星际运输队）", logisticsStuckDays: 5, address: "地球·江南基地市 3 号仓库" },
+  { orderId: "NX-1006", customer: "罗峰先生", sku: "生命之水", price: 399, deliveredDaysAgo: 30, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 6 号住所" },
+  { orderId: "NX-1007", customer: "罗峰先生", sku: "生命之水", price: 399, deliveredDaysAgo: 3, logistics: "已签收（星际运输队抵达）", logisticsStuckDays: 0, address: "地球·江南基地市 9 号住所" },
 ];
 `,
       },
@@ -471,7 +467,7 @@ import { products } from "../data/products";
 export const listProducts = createTool({
   id: "list-products",
   description:
-    "列出在售商品清单（名称 / 价格 / 类别 / 售后规则 / 是否可修复）。两种用途：① 客户没说明白是哪件商品时，按清单反问确认；② 客户只问某件商品的政策（能不能退 / 换 / 修）时，按清单里的 rule 回答，不必查订单。客户说的商品不在这份清单里，就是不在售",
+    "列出在售商品清单（名称 / 价格 / 类别 / 售后规则 / 是否可修复）。用途：① 客户说的是简称（「我的刀」）时，用它对上最接近的那一件；② 客户只问某件商品的政策（能不能退 / 换 / 修）时，按清单里的 rule 回答，不必查订单。客户说的商品不在这份清单里，就是不在售",
   // 没有入参也要给一个空对象 schema
   inputSchema: z.object({}),
   outputSchema: z.object({
@@ -492,10 +488,9 @@ export const listProducts = createTool({
 export const findOrders = createTool({
   id: "find-orders",
   description:
-    "查询订单（可按客户姓名或商品名筛选），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。查到后先向客户确认「是这一单吗」，确认后再调 checkReturnEligibility 判定",
+    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。查到一条直接调 checkReturnEligibility 判定；多条说不清时才复述让客户确认",
   inputSchema: z.object({
-    customer: z.string().optional().describe("客户称呼，例如 秦朗"),
-    sku: z.string().optional().describe("商品名，例如 生命之水"),
+    sku: z.string().optional().describe("商品名，例如 生命之水；不确定就留空"),
   }),
   outputSchema: z.object({
     orders: z.array(
@@ -508,11 +503,10 @@ export const findOrders = createTool({
       }),
     ),
   }),
-  execute: async ({ customer, sku }) => ({
+  execute: async ({ sku }) => ({
     orders: orders
       .filter(
         (item) =>
-          (!customer || item.customer === customer) &&
           (!sku || item.sku === sku),
       )
       .map((item) => ({
@@ -662,19 +656,12 @@ import { checkReturnEligibility } from "../tools/return-tool";
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服。
-- 职责：帮客户解决武器、装备与药剂的问题（退换、修复、运输）
-- 客户说的商品含糊、或你不确定我们有没有这件商品时，调用 listProducts 查清单，再反问确认是哪一件
-- 客户说的商品不在清单里，直接说明无法受理，不要再问订单号
-- 客户只问某件商品的政策（能不能退 / 换 / 修）时，按 listProducts 的规则直接回答，不必查订单
-- 要判具体订单时：客户不记得订单号，就问一句怎么称呼（或商品名），用 findOrders 查订单
-- 查到候选订单后，先向客户确认「是 NX-1007 这一单吗」，确认无误再调 checkReturnEligibility
-- 不要让客户去背订单号
-- 客户说了「坏了 / 故障 / 不能用」就按质量问题判，说了「没拆封 / 不要了」就按未拆封判，不必反问
-- 客户只给了订单号、没说问题类型时：按质量问题判，并在结论后补一句「若未拆封，也可按 P1 在 7 天内退货」，不要反问他
-- 判定退换资格时调用 checkReturnEligibility，不要自己推算天数
-- 只承诺售后政策内的处置，政策外的一律说「需要主管确认」
-- 中文、简短、专业，不卖萌\`,
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+- listProducts：查在售商品与售后政策
+- findOrders：查订单（可按商品名筛）
+- checkReturnEligibility：判退换资格，不要自己推算天数
+- 能用工具解决的，优先用工具，不要问客户
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   model: "deepseek/deepseek-flash",
   // 把工具交给 agent，由模型决定什么时候调用
   tools: { listProducts, findOrders, checkReturnEligibility },
@@ -702,7 +689,7 @@ export const supportAgent = new Agent({
       ],
     },
     concepts: [
-      "workingMemory — agent 的跨轮记事本：记住客户信息（称呼、订单号、问题、已答复的方案）；格式二选一，template（Markdown 文本块）或 schema（zod 对象），不能同时用",
+      "workingMemory — agent 的跨轮记事本：记住这次处理到哪了（订单号、商品、问题、已答复的方案）；格式二选一，template（Markdown 文本块）或 schema（zod 对象），不能同时用",
       "schema 的合并语义 — agent 只提交要改的字段，没提的保持不变；字段设成 null 就是删除",
       "scope — 工作记忆与语义召回的作用范围：resource（默认，同一个用户的所有会话共享）或 thread（只在本会话内）",
       "updateWorkingMemory — agent 写工作记忆用的内置工具；它该问什么、该记什么，由 instructions 决定",
@@ -730,7 +717,7 @@ import { checkReturnEligibility } from "../tools/return-tool";
 
 // 工作记忆的字段用 zod 约束：agent 只填该填的，读出来是结构化数据
 const customerProfile = z.object({
-  name: z.string().optional().describe("客户称呼"),
+  sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
   orderId: z.string().optional().describe("订单号，例如 NX-1002"),
   issue: z.string().optional().describe("正在处理的售后问题，例如 金丝断裂"),
   promise: z.string().optional().describe("已经答复客户的处理方案，例如 已告知可换新（P2）"),
@@ -739,21 +726,14 @@ const customerProfile = z.object({
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服。
-- 职责：帮客户解决武器、装备与药剂的问题（退换、修复、运输）
-- 客户说的商品含糊、或你不确定我们有没有这件商品时，调用 listProducts 查清单，再反问确认是哪一件
-- 客户说的商品不在清单里，直接说明无法受理，不要再问订单号
-- 客户只问某件商品的政策（能不能退 / 换 / 修）时，按 listProducts 的规则直接回答，不必查订单
-- 要判具体订单时：客户不记得订单号，就问一句怎么称呼（或商品名），用 findOrders 查订单
-- 查到候选订单后，先向客户确认「是 NX-1007 这一单吗」，确认无误再调 checkReturnEligibility
-- 不要让客户去背订单号
-- 客户说了「坏了 / 故障 / 不能用」就按质量问题判，说了「没拆封 / 不要了」就按未拆封判，不必反问
-- 客户只给了订单号、没说问题类型时：按质量问题判，并在结论后补一句「若未拆封，也可按 P1 在 7 天内退货」，不要反问他
-- 判定退换资格时调用 checkReturnEligibility，不要自己推算天数
-- 拿到订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+- listProducts：查在售商品与售后政策
+- findOrders：查订单（可按商品名筛）
+- checkReturnEligibility：判退换资格，不要自己推算天数
+- 能用工具解决的，优先用工具，不要问客户
+- 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
 - 已经答复过的方案不要改口
-- 只承诺售后政策内的处置，政策外的一律说「需要主管确认」
-- 中文、简短、专业，不卖萌\`,
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   model: "deepseek/deepseek-flash",
   tools: { listProducts, findOrders, checkReturnEligibility },
   // 记忆：会话记忆 + 这个客户的档案
@@ -821,7 +801,7 @@ import { listProducts, findOrders } from "../tools/lookup-tool";
 import { checkReturnEligibility } from "../tools/return-tool";
 
 const customerProfile = z.object({
-  name: z.string().optional().describe("客户称呼"),
+  sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
   orderId: z.string().optional().describe("装备或配件订单号，例如 NX-1002"),
   issue: z.string().optional().describe("正在处理的售后问题，例如 金丝断裂"),
   promise: z.string().optional().describe("已经答复客户的处理方案，例如 已告知可换新（P2）"),
@@ -830,21 +810,14 @@ const customerProfile = z.object({
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服。
-- 职责：帮客户解决武器、装备与药剂的问题（退换、修复、运输）
-- 客户说的商品含糊、或你不确定我们有没有这件商品时，调用 listProducts 查清单，再反问确认是哪一件
-- 客户说的商品不在清单里，直接说明无法受理，不要再问订单号
-- 客户只问某件商品的政策（能不能退 / 换 / 修）时，按 listProducts 的规则直接回答，不必查订单
-- 要判具体订单时：客户不记得订单号，就问一句怎么称呼（或商品名），用 findOrders 查订单
-- 查到候选订单后，先向客户确认「是 NX-1007 这一单吗」，确认无误再调 checkReturnEligibility
-- 不要让客户去背订单号
-- 客户说了「坏了 / 故障 / 不能用」就按质量问题判，说了「没拆封 / 不要了」就按未拆封判，不必反问
-- 客户只给了订单号、没说问题类型时：按质量问题判，并在结论后补一句「若未拆封，也可按 P1 在 7 天内退货」，不要反问他
-- 判定退换资格时调用 checkReturnEligibility，不要自己推算天数
-- 拿到订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+- listProducts：查在售商品与售后政策
+- findOrders：查订单（可按商品名筛）
+- checkReturnEligibility：判退换资格，不要自己推算天数
+- 能用工具解决的，优先用工具，不要问客户
+- 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
 - 已经答复过的方案不要改口
-- 只承诺售后政策内的处置，政策外的一律说「需要主管确认」
-- 中文、简短、专业，不卖萌\`,
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   model: "deepseek/deepseek-flash",
   tools: { listProducts, findOrders, checkReturnEligibility },
   memory: new Memory({
