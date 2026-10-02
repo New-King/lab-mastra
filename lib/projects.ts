@@ -1182,6 +1182,496 @@ export default function Home() {
       },
     ],
   },
+  {
+    kind: "project",
+    slug: "workflow-basics",
+    title: "工作流（一）：把售后处理做成流程",
+    menuTitle: "工作流（一）",
+    summary:
+      "把一次售后处理做成固定流程：分类 → 查订单 → 判资格 → 回复；哪一步出错、哪一步慢，在 Studio 里都看得到。",
+    verify: {
+      label: "去 Studio 跑流程",
+      description: [
+        "打开 http://localhost:4111/workflows，选 after-sales",
+        "这是一个把售后处理串成流程的客服工作流：意图分类、查订单、判资格、生成回复按步执行，每步的输入输出都能查到",
+      ],
+    },
+    concepts: [
+      "createWorkflow — 定义一个工作流：id、inputSchema、outputSchema、stateSchema，用 .then() / .branch() / .parallel() 串步骤，最后 .commit()",
+      "createStep — 一步：id、inputSchema、outputSchema，execute 拿到 { inputData, state, setState, mastra, requestContext }",
+      "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
+      "Control Flow — .then 顺序、.branch 条件分支、.parallel 并行；分支写成一串 [条件函数, 步骤]",
+      "步骤里调 agent / 调工具 — mastra.getAgent(\"support-agent\") 拿 agent；工具直接 findOrders.execute(input, { requestContext })",
+    ],
+    docLinks: [
+      { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
+      { title: "Workflow State", href: "https://mastra.ai/docs/workflows/workflow-state" },
+      { title: "Control Flow", href: "https://mastra.ai/docs/workflows/control-flow" },
+      { title: "Agents and Tools", href: "https://mastra.ai/docs/workflows/agents-and-tools" },
+    ],
+    files: [
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 1,
+        action: "create",
+        hint: "把一次售后处理做成工作流（脚手架自带的 weather-workflow.ts 保持不动）",
+        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+import { findOrders } from "../tools/lookup-tool";
+import { checkReturnEligibility } from "../tools/return-tool";
+
+// 所有步骤共享的状态：客户在办哪一单、办到哪一步
+const stateSchema = z.object({
+  intent: z.enum(["return", "logistics", "question"]).optional(),
+  sku: z.string().optional(),
+  orderId: z.string().optional(),
+  decision: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+// ① 分类：语言理解交给模型
+const classify = createStep({
+  id: "classify",
+  description: "判断客户这句话属于退换、物流还是其他咨询",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({
+    intent: z.enum(["return", "logistics", "question"]),
+    sku: z.string().optional(),
+  }),
+  stateSchema,
+  execute: async ({ inputData, mastra, setState }) => {
+    const agent = mastra?.getAgent("support-agent");
+    if (!agent) throw new Error("support-agent not found");
+    const res = await agent.generate(
+      "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
+      {
+        structuredOutput: {
+          schema: z.object({
+            intent: z.enum(["return", "logistics", "question"]),
+            sku: z.string().optional(),
+          }),
+        },
+      },
+    );
+    const out = res.object ?? { intent: "question" as const };
+    await setState({ intent: out.intent, sku: out.sku });
+    return out;
+  },
+});
+
+// ② 查订单：确定性的事交给工具，不让模型自己挑一单
+const lookupOrder = createStep({
+  id: "lookup-order",
+  description: "按商品名查订单，唯一命中就写进状态",
+  inputSchema: z.object({
+    intent: z.enum(["return", "logistics", "question"]),
+    sku: z.string().optional(),
+  }),
+  outputSchema: z.object({ found: z.boolean() }),
+  stateSchema,
+  execute: async ({ inputData, requestContext, setState }) => {
+    if (inputData.intent !== "return") return { found: false };
+    const { orders } = await findOrders.execute(
+      { sku: inputData.sku },
+      { requestContext },
+    );
+    if (orders.length !== 1) return { found: false };
+    await setState({ orderId: orders[0].orderId });
+    return { found: true };
+  },
+});
+
+// ③ 判资格：天数与条款都在工具里，模型不参与
+const judge = createStep({
+  id: "judge",
+  description: "按售后政策判定这一单能不能退 / 换 / 修",
+  inputSchema: z.object({ found: z.boolean() }),
+  outputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  stateSchema,
+  execute: async ({ inputData, requestContext, state, setState }) => {
+    if (!inputData.found || !state.orderId) {
+      const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
+      await setState({ decision: "need-info", reason });
+      return { decision: "need-info", reason };
+    }
+    const verdict = await checkReturnEligibility.execute(
+      { orderId: state.orderId, issue: "quality" },
+      { requestContext },
+    );
+    await setState({ decision: verdict.decision, reason: verdict.reason });
+    return { decision: verdict.decision, reason: verdict.reason };
+  },
+});
+
+// ④ 回复：把状态里的事实交给模型组织成人话
+const reply = createStep({
+  id: "reply",
+  description: "用客户听得懂的话说明结果",
+  inputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+  execute: async ({ inputData, state, mastra }) => {
+    const agent = mastra?.getAgent("support-agent");
+    const prompt =
+      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\n" +
+      "判定：" + inputData.decision + "\n依据：" + inputData.reason +
+      "\n当前状态：" + JSON.stringify(state);
+    const res = await agent?.generate(prompt);
+    return { answer: res?.text ?? inputData.reason };
+  },
+});
+
+export const afterSalesWorkflow = createWorkflow({
+  id: "after-sales",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+})
+  .then(classify)
+  .then(lookupOrder)
+  .then(judge)
+  .then(reply)
+  .commit();
+`,
+      },
+      {
+        path: "src/mastra/index.ts",
+        order: 2,
+        action: "edit",
+        hint: "只加两处：import 与 workflows 里的一项，其余配置不动",
+        code: `// ① 顶部加一行 import
+import { afterSalesWorkflow } from "./workflows/after-sales";
+
+// ② 在 new Mastra({ ... }) 的 workflows 里加一项
+workflows: { weatherWorkflow, afterSalesWorkflow },
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "workflow-suspend",
+    title: "工作流（二）：暂停恢复与人工审批",
+    menuTitle: "工作流（二）",
+    summary:
+      "让流程在需要人拍板的地方停下来：挂起等主管批、批完从断点继续，重启进程也不丢。",
+    verify: {
+      label: "去 Studio 试审批",
+      description: [
+        "打开 http://localhost:4111/workflows，选 after-sales",
+        "这是一个会中途等人工审批的客服工作流：退款类判定会挂起，批准或驳回后从断点继续跑完",
+      ],
+    },
+    concepts: [
+      "suspend — 步骤里 return await suspend({ ... }) 挂起本次运行，等外部带 resumeData 回来才继续往下走",
+      "resumeSchema / suspendSchema — 前者声明「恢复时要传什么」，后者声明「挂起时要给人看什么」",
+      "run.resume({ step, resumeData }) — 从挂起点继续：step 可传步骤实例或 id；只传 resumeData 就恢复最近那个挂起点",
+      "createRun({ runId }) — 拿 runId 把某次运行取回来再 resume，所以恢复可以发生在任意请求里（HTTP 路由、审批后台）",
+      "snapshots / time travel — 每一步的状态都落库：进程重启后仍能从断点续跑；也能回放到某一步重跑，用来查「这一步为什么错」",
+    ],
+    docLinks: [
+      { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
+      { title: "Human-in-the-Loop", href: "https://mastra.ai/docs/workflows/human-in-the-loop" },
+      { title: "Snapshots", href: "https://mastra.ai/docs/workflows/snapshots" },
+      { title: "Time Travel", href: "https://mastra.ai/docs/workflows/time-travel" },
+    ],
+    files: [
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 1,
+        action: "replace",
+        hint: "在上一课的流程里插一步「人工审批」：退款类判定挂起，批完再继续；其余步骤不动",
+        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+import { findOrders } from "../tools/lookup-tool";
+import { checkReturnEligibility } from "../tools/return-tool";
+
+// 所有步骤共享的状态：客户在办哪一单、办到哪一步
+const stateSchema = z.object({
+  intent: z.enum(["return", "logistics", "question"]).optional(),
+  sku: z.string().optional(),
+  orderId: z.string().optional(),
+  decision: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+// ① 分类：语言理解交给模型
+const classify = createStep({
+  id: "classify",
+  description: "判断客户这句话属于退换、物流还是其他咨询",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({
+    intent: z.enum(["return", "logistics", "question"]),
+    sku: z.string().optional(),
+  }),
+  stateSchema,
+  execute: async ({ inputData, mastra, setState }) => {
+    const agent = mastra?.getAgent("support-agent");
+    if (!agent) throw new Error("support-agent not found");
+    const res = await agent.generate(
+      "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
+      {
+        structuredOutput: {
+          schema: z.object({
+            intent: z.enum(["return", "logistics", "question"]),
+            sku: z.string().optional(),
+          }),
+        },
+      },
+    );
+    const out = res.object ?? { intent: "question" as const };
+    await setState({ intent: out.intent, sku: out.sku });
+    return out;
+  },
+});
+
+// ② 查订单：确定性的事交给工具，不让模型自己挑一单
+const lookupOrder = createStep({
+  id: "lookup-order",
+  description: "按商品名查订单，唯一命中就写进状态",
+  inputSchema: z.object({
+    intent: z.enum(["return", "logistics", "question"]),
+    sku: z.string().optional(),
+  }),
+  outputSchema: z.object({ found: z.boolean() }),
+  stateSchema,
+  execute: async ({ inputData, requestContext, setState }) => {
+    if (inputData.intent !== "return") return { found: false };
+    const { orders } = await findOrders.execute(
+      { sku: inputData.sku },
+      { requestContext },
+    );
+    if (orders.length !== 1) return { found: false };
+    await setState({ orderId: orders[0].orderId });
+    return { found: true };
+  },
+});
+
+// ③ 判资格：天数与条款都在工具里，模型不参与
+const judge = createStep({
+  id: "judge",
+  description: "按售后政策判定这一单能不能退 / 换 / 修",
+  inputSchema: z.object({ found: z.boolean() }),
+  outputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  stateSchema,
+  execute: async ({ inputData, requestContext, state, setState }) => {
+    if (!inputData.found || !state.orderId) {
+      const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
+      await setState({ decision: "need-info", reason });
+      return { decision: "need-info", reason };
+    }
+    const verdict = await checkReturnEligibility.execute(
+      { orderId: state.orderId, issue: "quality" },
+      { requestContext },
+    );
+    await setState({ decision: verdict.decision, reason: verdict.reason });
+    return { decision: verdict.decision, reason: verdict.reason };
+  },
+});
+
+// ④ 人工审批：退款类判定要主管点头，其余直接过
+const approval = createStep({
+  id: "approval",
+  description: "需要人工拍板的判定在这里挂起，等批准或驳回",
+  inputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  outputSchema: z.object({ approved: z.boolean() }),
+  stateSchema,
+  // 恢复时外部要传什么
+  resumeSchema: z.object({ approved: z.boolean(), note: z.string().optional() }),
+  // 挂起时把要给人看的信息一起存下来
+  suspendSchema: z.object({ orderId: z.string().optional(), reason: z.string() }),
+  execute: async ({ inputData, resumeData, state, suspend, setState }) => {
+    if (inputData.decision !== "refund") return { approved: true };
+    // 第一次执行：挂起，等主管
+    if (!resumeData) {
+      return await suspend({ orderId: state.orderId, reason: inputData.reason });
+    }
+    // 被 resume 之后才走到这里
+    await setState({
+      decision: resumeData.approved ? "refund-approved" : "handover",
+    });
+    return { approved: resumeData.approved };
+  },
+});
+
+// ⑤ 回复：把状态里的事实交给模型组织成人话
+const reply = createStep({
+  id: "reply",
+  description: "用客户听得懂的话说明结果",
+  inputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+  execute: async ({ inputData, state, mastra }) => {
+    const agent = mastra?.getAgent("support-agent");
+    const prompt =
+      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\n" +
+      "判定：" + inputData.decision + "\n依据：" + inputData.reason +
+      "\n当前状态：" + JSON.stringify(state);
+    const res = await agent?.generate(prompt);
+    return { answer: res?.text ?? inputData.reason };
+  },
+});
+
+export const afterSalesWorkflow = createWorkflow({
+  id: "after-sales",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+})
+  .then(classify)
+  .then(lookupOrder)
+  .then(judge)
+  .then(approval)
+  .then(reply)
+  .commit();
+
+// 恢复入口：真实项目里放在 HTTP 路由或审批后台
+export async function approveRun(runId: string, approved: boolean) {
+  const run = await afterSalesWorkflow.createRun({ runId });
+  return run.resume({ step: "approval", resumeData: { approved } });
+}
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "workflow-resilience",
+    title: "工作流（三）：容错与定时",
+    menuTitle: "工作流（三）",
+    summary:
+      "让流程自己扛住失败、按点自己跑：失败按策略重试、出错有统一兜底、到点自动做一次订单巡检。",
+    verify: {
+      label: "看两个工作流",
+      description: [
+        "打开 http://localhost:4111/workflows，能看到 after-sales 与 daily-check 两个工作流",
+        "这是一个会重试、会兜底、会定时自跑的客服工作流：步骤失败按配置重试，每天 9 点自动跑一次订单巡检",
+      ],
+    },
+    concepts: [
+      "retryConfig — 工作流级重试：{ attempts, delay } 对所有步骤生效",
+      "retries — 步骤级重试次数，写在 createStep 里，会覆盖工作流级的配置",
+      "options.onError — 只在最终失败时调用：拿得到 error、status（failed / tripwire）与各步骤结果，适合统一发告警",
+      "schedule — 在 createWorkflow 里写 { cron, timezone, inputData }，Mastra 启动时自动接管；同一个工作流照样能被手动运行",
+      "Background Tasks — 跑很久的任务不想占着请求就丢到后台执行（本课不展开，链接在右侧）",
+    ],
+    docLinks: [
+      { title: "Error Handling", href: "https://mastra.ai/docs/workflows/error-handling" },
+      { title: "Scheduled Workflows", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
+      { title: "Background Tasks", href: "https://mastra.ai/docs/harness/background-tasks" },
+      { title: "Schedules", href: "https://mastra.ai/docs/harness/schedules" },
+    ],
+    files: [
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 1,
+        action: "edit",
+        hint: "在第 8 课的流程上加：重试策略与失败兜底（不要整体覆盖）",
+        code: `// ① 工作流定义里加 retryConfig（所有步骤通用）与 onError（最终失败的兜底）
+const afterSalesWorkflow = createWorkflow({
+  id: "after-sales",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+  // 失败重试 3 次，间隔 1 秒
+  retryConfig: { attempts: 3, delay: 1000 },
+  options: {
+    onError: async (errorInfo) => {
+      console.error("[after-sales] 失败：", errorInfo.error?.message);
+    },
+  },
+})
+  .then(classify)
+  .then(lookupOrder)
+  .then(judge)
+  .then(approval)
+  .then(reply)
+  .commit();
+
+// ② 只想给某一步单独设重试次数，就写在 createStep({ ... }) 里（覆盖工作流级）
+const lookupOrder = createStep({
+  id: "lookup-order",
+  description: "按商品名查订单，唯一命中就写进状态",
+  retries: 3,
+  // ...其余同上一课
+});
+`,
+      },
+      {
+        path: "src/mastra/workflows/daily-check.ts",
+        order: 2,
+        action: "create",
+        hint: "新建一个定时工作流：每天 9 点自动扫一遍订单",
+        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+import { orders } from "../data/orders";
+
+// 巡检：挑出快到 7 天 / 15 天售后窗口的订单
+const scan = createStep({
+  id: "scan",
+  description: "扫一遍订单，挑出快到售后窗口的",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ todo: z.array(z.string()) }),
+  execute: async () => {
+    const todo = orders
+      .filter(
+        (item) =>
+          item.deliveredDaysAgo !== null &&
+          item.deliveredDaysAgo >= 5 &&
+          item.deliveredDaysAgo <= 15,
+      )
+      .map(
+        (item) =>
+          item.orderId + " " + item.sku + " 已签收 " + item.deliveredDaysAgo + " 天",
+      );
+    return { todo };
+  },
+});
+
+const collect = createStep({
+  id: "collect",
+  description: "把待跟进清单整理成一行摘要",
+  inputSchema: z.object({ todo: z.array(z.string()) }),
+  outputSchema: z.object({ count: z.number(), summary: z.string() }),
+  execute: async ({ inputData }) => {
+    const count = inputData.todo.length;
+    return {
+      count,
+      summary: count === 0 ? "今天没有快到窗口的订单" : inputData.todo.join("；"),
+    };
+  },
+});
+
+export const dailyCheckWorkflow = createWorkflow({
+  id: "daily-check",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ count: z.number(), summary: z.string() }),
+  // 每天 9 点（上海时间）自动跑一次；Mastra 启动时会接管这个 schedule，不用另外注册
+  schedule: {
+    cron: "0 9 * * *",
+    timezone: "Asia/Shanghai",
+    inputData: {},
+  },
+})
+  .then(scan)
+  .then(collect)
+  .commit();
+`,
+      },
+      {
+        path: "src/mastra/index.ts",
+        order: 3,
+        action: "edit",
+        hint: "把新工作流也注册进去（带 schedule 的工作流同样要注册才会被调度）",
+        code: `// ① 顶部加一行 import
+import { dailyCheckWorkflow } from "./workflows/daily-check";
+
+// ② workflows 里加一项
+workflows: { weatherWorkflow, afterSalesWorkflow, dailyCheckWorkflow },
+`,
+      },
+    ],
+  },
 ];
 
 export function getNavItem(slug: string): NavItem | undefined {

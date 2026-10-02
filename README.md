@@ -43,7 +43,9 @@ lab-mastra/
 第 4 课  覆盖 agents/support-agent.ts（加工作记忆 customerProfile：跨对话记得这单办到哪）
 第 5 课  覆盖 agents/support-agent.ts（semanticRecall + messageHistory 预算 + scope）；新增依赖 @ai-sdk/openai-compatible@^2（嵌入走硅基流动）
 第 6 课  新增 app/api/generate/route.ts（handleChatStream）+ 复用 lab-ai-sdk 第 4 课的 app/page.tsx
-第 7~9 课 新增 workflows/*.ts（售后流程 / 审批挂起 / 定时跟进）+ 覆盖 agent/index
+第 7 课  新增 workflows/after-sales.ts（分类 → 查订单 → 判资格 → 回复）+ index.ts 注册
+第 8 课  重写 workflows/after-sales.ts（插入 approval 步骤：suspend / resume）
+第 9 课  after-sales.ts 加重试与 onError + 新建 workflows/daily-check.ts（cron 定时巡检）+ index.ts 注册
 第 10 课 新增 knowledge/（售后政策 P1–P5 入库 + 检索工具）
 第 11~12 课 新增 evals/、observability 配置
 第 13~14 课 storage / auth / 部署

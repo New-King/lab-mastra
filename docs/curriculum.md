@@ -155,23 +155,33 @@
 
 - **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 商品校验（不在售直接拒）→ 资格校验 → 处置（换新 / 退款 / 转人工）**；在 workflow 里调 agent 与第 3 课的 `checkReturnEligibility`，客户档案来自第 4 课的工作记忆
 - **能力**：Workflow State、Control Flow（分支）、Agents and Tools
+- **依赖**：无新增（工作流在 `@mastra/core/workflows` 里）
+- **新增/改动文件**：`src/mastra/workflows/after-sales.ts`（新建）、`src/mastra/index.ts`（注册）
+- **依据（2026-10-02 核对随包文档 + 脚手架样例 `weather-workflow.ts`）**：`createStep({ id, description, inputSchema, outputSchema, stateSchema, execute: async ({ inputData, state, setState, mastra, requestContext }) })`；`createWorkflow({ id, inputSchema, outputSchema, stateSchema }).then(a).branch([[cond, step]]).parallel([...]).commit()`；步骤里调 agent 用 `mastra.getAgent("support-agent")`，调工具用 `findOrders.execute(input, { requestContext })`；代码里取结构化结果用 `agent.generate(prompt, { structuredOutput: { schema } })` → `res.object`
 - **验收**：一次请求按步骤跑完，Studio 里能看到每步的输入输出
-- **文档**：`/docs/workflows/workflow-state`、`/docs/workflows/control-flow`、`/docs/workflows/agents-and-tools`
+- **待验证**：Studio 的 Workflows 页里输入 `{ message }` 跑一次；`findOrders.execute` 在步骤内的 `requestContext` 透传是否正常
+- **文档（已核实 200）**：`/docs/workflows/overview`、`/docs/workflows/workflow-state`、`/docs/workflows/control-flow`、`/docs/workflows/agents-and-tools`
 
 ### 第 8 课 · 工作流（二）：暂停恢复与人工审批
 
 - **目标**：流程跑到「等人工确认」时暂停；重启进程后从断点继续；能回看/重放快照
 - **能力**：Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel
-- **落实到具体 API（借参考仓库阶段 4 / 6）**：用内置 `ask_user` 挂起交互（它只负责"暂停 + 展示控件 + 返回答案"，**不负责业务判断、不直接写记忆**）；开启 `autoResumeSuspendedTools` 让被挂起的 run 能续；控件类型（`text` / `single_select` / `multi_select`）由**确定性字段映射**决定，未配置的字段默认文本框，避免模型临时编造选项；workflow 内部不等待自然语言答案，只产出稳定的 `responsePlan`
+- **依据（2026-10-02 核对随包文档）**：步骤里加 `suspendSchema` / `resumeSchema`，执行时 `return await suspend({ ... })` 挂起；恢复用 `run.resume({ step, resumeData })`，只传 `resumeData` 时恢复最近一个挂起点；拿 `workflow.createRun({ runId })` 可以把某次运行取回来再 resume（所以恢复可以放在 HTTP 路由 / 审批后台里）。状态（`state`/`setState`）跨 suspend/resume 保留
+- **另一种做法（参考仓库阶段 4/6，本课不采用）**：用内置 `ask_user` 挂起 + `autoResumeSuspendedTools` 自动续跑，把控件类型（`text` / `single_select`）做成确定性字段映射 —— 适合"要给客户展示选项"的场景；我们这里审批人是我们自己的后台，直接 `resume` 更简单
+- **改动文件**：只重写 `src/mastra/workflows/after-sales.ts`（在判资格与回复之间插一步 `approval`）
 - **验收**：杀掉进程再启动，流程仍能续跑；快照可回放；同一个挂起点在不同答案下走不同分支
-- **文档**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
+- **待验证**：Studio 的 Workflows 页里挂起后能不能直接点恢复（界面行为未实测）；`createRun({ runId })` 跨进程恢复（runId 从库里取）是否正常
+- **文档（已核实 200）**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
 
 ### 第 9 课 · 工作流（三）：容错与定时
 
 - **目标**：步骤失败可重试 / 回滚；定时自动跑（日报、巡检）
 - **能力**：Error Handling、Scheduled Workflows、Harness（Background Tasks / Schedules）
+- **依据（2026-10-02 核对随包文档）**：工作流级 `retryConfig: { attempts, delay }`；步骤级 `createStep({ retries })` 覆盖前者；最终失败走 `options.onError(errorInfo)`（`error` / `status` / `steps`）。定时：在 `createWorkflow` 里写 `schedule: { cron, timezone, inputData }`，**Mastra 启动时自动接管**，不需要额外的注册调用；带 `schedule` 的工作流照样能手动 `start()`
+- **改动文件**：`after-sales.ts`（加重试与 onError）+ 新建 `daily-check.ts`（每天 9 点巡检订单）+ `index.ts` 注册
 - **验收**：故意让某步失败，能看到重试与最终状态；到点自动触发一次
-- **文档**：`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/harness/background-tasks`、`/docs/harness/schedules`
+- **待验证**：cron 是否按 `timezone: "Asia/Shanghai"` 到点触发（未实跑等待）；Studio 里能不能手动触发带 schedule 的工作流
+- **文档（已核实 200）**：`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/harness/background-tasks`、`/docs/harness/schedules`
 
 ### 第 10 课 · RAG：知识库与检索
 
