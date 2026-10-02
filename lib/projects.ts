@@ -1383,6 +1383,7 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
         hint: "在上一课的流程里插一步「人工审批」：退款类判定挂起，批完再继续；其余步骤不动",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+import { orders } from "../data/orders";
 import { findOrders } from "../tools/lookup-tool";
 import { checkReturnEligibility } from "../tools/return-tool";
 
@@ -1482,9 +1483,15 @@ const approval = createStep({
   suspendSchema: z.object({ orderId: z.string().optional(), reason: z.string() }),
   execute: async ({ inputData, resumeData, state, suspend, setState }) => {
     if (inputData.decision !== "refund") return { approved: true };
+    // P4：客服可自主补偿 ≤ 50 黑龙币，超出必须主管审批
+    const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
+    if (price <= 50) return { approved: true };
     // 第一次执行：挂起，等主管
     if (!resumeData) {
-      return await suspend({ orderId: state.orderId, reason: inputData.reason });
+      return await suspend({
+        orderId: state.orderId,
+        reason: inputData.reason + "（退款金额 " + price + " 黑龙币，超出 P4 的 50）",
+      });
     }
     // 被 resume 之后才走到这里
     await setState({
@@ -1668,6 +1675,274 @@ import { dailyCheckWorkflow } from "./workflows/daily-check";
 
 // ② workflows 里加一项
 workflows: { weatherWorkflow, afterSalesWorkflow, dailyCheckWorkflow },
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "rag-knowledge",
+    title: "RAG：把售后政策做成知识库",
+    menuTitle: "RAG",
+    summary:
+      "政策原文切块、向量化、入库，再给 agent 一个检索工具：答政策问题时引用条款，而不是凭印象说。",
+    install: {
+      command: "pnpm add @mastra/rag",
+      description: "在 my-mastra-app 目录执行 —— 切块（MDocument）和检索工具（createVectorQueryTool）都在 @mastra/rag 里；嵌入模型沿用第 5 课的硅基流动，不用再配 key。",
+    },
+    verify: {
+      label: "去 Studio 问政策",
+      description: [
+        "先打开 http://localhost:4111/workflows 手动跑一次 ingest-policies，把政策原文入库",
+        "这是一个带政策知识库的客服 agent：答政策问题时先检索条款，回答里会说清依据 P1 还是 P2",
+      ],
+    },
+    concepts: [
+      "MDocument — 把原文装进来：MDocument.fromText(...)，也支持 fromMarkdown / fromHTML / fromJSON",
+      "chunk — 切块：{ strategy: \"recursive\", maxSize, overlap, separators }；块太大检索粗、太小丢上下文",
+      "embedMany — 批量向量化（ai 包提供）：embedMany({ model, values }) → { embeddings }，维度必须和建索引时一致",
+      "createIndex / upsert — 先建索引（indexName、dimension、metric）再写向量；metadata 里带条款号，回答才能给出来源",
+      "createVectorQueryTool — 把检索包成工具给 agent：{ vectorStoreName, indexName, model }；vectorStoreName 要在 Mastra 实例的 vectors 里注册",
+    ],
+    docLinks: [
+      { title: "RAG 总览", href: "https://mastra.ai/reference/rag/overview" },
+      { title: "切块与向量化", href: "https://mastra.ai/reference/rag/chunking-and-embedding" },
+      { title: "检索与检索工具", href: "https://mastra.ai/reference/rag/retrieval" },
+      { title: "可换的向量库", href: "https://mastra.ai/reference/rag/vector-databases" },
+    ],
+    files: [
+      {
+        path: "src/mastra/knowledge/embedder.ts",
+        order: 1,
+        action: "create",
+        hint: "把嵌入模型与索引名抽出来：入库和检索两处要用同一份",
+        code: `import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+
+// 嵌入模型沿用第 5 课的硅基流动：中文好用，也不用在本地下载模型
+const siliconflow = createOpenAICompatible({
+  name: "siliconflow",
+  baseURL: "https://api.siliconflow.cn/v1",
+  apiKey: process.env.SILICONFLOW_API_KEY,
+});
+
+export const policyEmbedder = siliconflow.embeddingModel(
+  "BAAI/bge-large-zh-v1.5",
+);
+
+// 向量索引名与模型维度：入库和检索两处都要用同一个值
+export const POLICY_INDEX = "policies";
+export const POLICY_EMBED_DIM = 1024;
+`,
+      },
+      {
+        path: "src/mastra/knowledge/policies.ts",
+        order: 2,
+        action: "create",
+        hint: "政策原文 —— 检索的唯一事实来源（对应 docs/scenario.md 的 P1–P6）",
+        code: `// 售后政策原文：这是唯一的事实来源，检索工具只会引用它
+// （条款必须可判定：时间窗口 + 条件 + 责任方，一个字都不能含糊）
+export const policyDocs: { title: string; text: string }[] = [
+  {
+    title: "P1 退货",
+    text: "P1 退货：签收后 7 个自然日内、原厂封禁未启（未拆封、未启用）：全额退款，星际运费由商家承担；超过 7 天不再适用无理由退货。",
+  },
+  {
+    title: "P2 换新",
+    text: "P2 换新：签收后 15 个自然日内出现质量问题（梭体灵纹闪烁、金丝断裂）：免费换新，需要客户提供故障记录。",
+  },
+  {
+    title: "P3 修复",
+    text: "P3 修复：1 年免费修复，梭体核心非人为损坏免费修复；人为损坏（含强行灌注念力）收材料费。",
+  },
+  {
+    title: "P4 补偿",
+    text: "P4 补偿：客服可自主补偿不超过 50 黑龙币；超出部分必须走主管审批。",
+  },
+  {
+    title: "P5 出处",
+    text: "P5 出处：政策解释以售后政策文件为准，客服不得口头加码；不在在售清单内或超出窗口的，一律需要主管确认。",
+  },
+  {
+    title: "P6 超期未拆封",
+    text: "P6 超期未拆封：未拆封但已过 7 天，无理由退货窗口关闭、不能退；如有质量问题再按 P2 / P3 处理。",
+  },
+  {
+    title: "耗材说明",
+    text: "耗材说明：生命之水属于耗材，退货与换新照常适用（P1 / P2），但不适用修复（P3），因为一次性消耗品没有维修价值。",
+  },
+];
+`,
+      },
+      {
+        path: "src/mastra/workflows/ingest-policies.ts",
+        order: 3,
+        action: "create",
+        hint: "入库工作流：切块 → 向量化 → 建索引 → 写入（在 Studio 里跑一次即可）",
+        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { LibSQLVector } from "@mastra/libsql";
+import { MDocument } from "@mastra/rag";
+import { embedMany } from "ai";
+import { z } from "zod";
+import {
+  POLICY_EMBED_DIM,
+  POLICY_INDEX,
+  policyEmbedder,
+} from "../knowledge/embedder";
+import { policyDocs } from "../knowledge/policies";
+
+// 向量和消息存在同一个库文件里
+// （第 6 课讲过：两个进程并行时这里要用绝对路径，否则各建一份库）
+const vectorStore = new LibSQLVector({
+  id: "knowledgeBase",
+  url: "file:./mastra.db",
+});
+
+const ingest = createStep({
+  id: "ingest",
+  description: "把政策原文切块、向量化、写入向量库",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ chunks: z.number() }),
+  execute: async () => {
+    // ① 切块：块大小和重叠决定检索粒度
+    const chunks: string[] = [];
+    const metadatas: { title: string }[] = [];
+    for (const doc of policyDocs) {
+      const document = MDocument.fromText(doc.text);
+      const parts = await document.chunk({
+        strategy: "recursive",
+        maxSize: 256,
+        overlap: 32,
+        separators: ["\n"],
+      });
+      for (const part of parts) {
+        chunks.push(part.text);
+        // metadata 里带上条款号：检索回来才能说清"依据哪一条"
+        metadatas.push({ title: doc.title });
+      }
+    }
+
+    // ② 向量化：模型输出维度必须和建索引时一致
+    const { embeddings } = await embedMany({
+      model: policyEmbedder,
+      values: chunks,
+    });
+
+    // ③ 建索引 + 写入（索引已存在时会报错，重复入库前先删旧索引或换个索引名）
+    await vectorStore.createIndex({
+      indexName: POLICY_INDEX,
+      dimension: POLICY_EMBED_DIM,
+      metric: "cosine",
+    });
+    await vectorStore.upsert({
+      indexName: POLICY_INDEX,
+      vectors: embeddings,
+      metadata: metadatas,
+    });
+
+    return { chunks: chunks.length };
+  },
+});
+
+export const ingestPoliciesWorkflow = createWorkflow({
+  id: "ingest-policies",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ chunks: z.number() }),
+})
+  .then(ingest)
+  .commit();
+`,
+      },
+      {
+        path: "src/mastra/tools/policy-search.ts",
+        order: 4,
+        action: "create",
+        hint: "把检索包成工具，交给 agent",
+        code: `import { createVectorQueryTool } from "@mastra/rag";
+import { POLICY_INDEX, policyEmbedder } from "../knowledge/embedder";
+
+// 把检索包成一个工具：agent 只有遇到政策问题时才会调它
+// vectorStoreName 对应 Mastra 实例里注册的向量库名字（这里是 knowledgeBase）
+export const policySearch = createVectorQueryTool({
+  vectorStoreName: "knowledgeBase",
+  indexName: POLICY_INDEX,
+  model: policyEmbedder,
+});
+`,
+      },
+      {
+        path: "src/mastra/agents/support-agent.ts",
+        order: 5,
+        action: "replace",
+        hint: "把检索工具挂到 agent 上，并在提示词里要求「说清依据哪一条」",
+        code: `import { Agent } from "@mastra/core/agent";
+import { Memory } from "@mastra/memory";
+import { LibSQLVector } from "@mastra/libsql";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { z } from "zod";
+import { listProducts, findOrders } from "../tools/lookup-tool";
+import { checkReturnEligibility } from "../tools/return-tool";
+import { policySearch } from "../tools/policy-search";
+
+// 嵌入模型走硅基流动的 OpenAI 兼容端点：中文效果好，也不用在本地下载模型
+const siliconflow = createOpenAICompatible({
+  name: "siliconflow",
+  baseURL: "https://api.siliconflow.cn/v1",
+  apiKey: process.env.SILICONFLOW_API_KEY,
+});
+
+const customerProfile = z.object({
+  sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
+  orderId: z.string().optional().describe("装备或配件订单号，例如 NX-1002"),
+  issue: z.string().optional().describe("正在处理的售后问题，例如 金丝断裂"),
+  promise: z.string().optional().describe("已经答复客户的处理方案，例如 已告知可换新（P2）"),
+});
+
+export const supportAgent = new Agent({
+  id: "support-agent",
+  name: "虚拟宇宙公司客服",
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
+- listProducts：查在售商品与售后政策
+- findOrders：查订单（可按商品名筛）
+- checkReturnEligibility：判退换资格，不要自己推算天数
+- policySearch：查售后政策原文（P1–P6）；答政策问题时，在回答里说清依据哪一条
+- 能用工具解决的，优先用工具，不要麻烦客户
+- 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
+- 已经答复过的方案不要改口
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
+  model: "deepseek/deepseek-flash",
+  tools: { listProducts, findOrders, checkReturnEligibility, policySearch },
+  memory: new Memory({
+    vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
+    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
+    options: {
+      lastMessages: 20,
+      messageHistory: { maxTokens: 8000 },
+      semanticRecall: { topK: 3, messageRange: 2, scope: "resource" },
+      workingMemory: { enabled: true, schema: customerProfile },
+    },
+  }),
+});
+`,
+      },
+      {
+        path: "src/mastra/index.ts",
+        order: 6,
+        action: "edit",
+        hint: "注册向量库与入库工作流（vectorStoreName 要和这里注册的名字一致）",
+        code: `// ① 顶部加 import
+import { LibSQLVector } from "@mastra/libsql";
+import { ingestPoliciesWorkflow } from "./workflows/ingest-policies";
+
+// ② 在 new Mastra({ ... }) 里加两项
+vectors: {
+  knowledgeBase: new LibSQLVector({ id: "knowledgeBase", url: "file:./mastra.db" }),
+},
+workflows: {
+  weatherWorkflow,
+  afterSalesWorkflow,
+  dailyCheckWorkflow,
+  ingestPoliciesWorkflow,
+},
 `,
       },
     ],

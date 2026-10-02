@@ -164,11 +164,13 @@
 
 ### 第 8 课 · 工作流（二）：暂停恢复与人工审批
 
+- **与场景的挂钩**：审批条件按政策 **P4**（客服可自主补偿 ≤ 50 黑龙币，超出需主管）判定，所以退款类判定一定挂起 —— 审批有真实的金钱后果
+
 - **目标**：流程跑到「等人工确认」时暂停；重启进程后从断点继续；能回看/重放快照
 - **能力**：Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel
 - **依据（2026-10-02 核对随包文档）**：步骤里加 `suspendSchema` / `resumeSchema`，执行时 `return await suspend({ ... })` 挂起；恢复用 `run.resume({ step, resumeData })`，只传 `resumeData` 时恢复最近一个挂起点；拿 `workflow.createRun({ runId })` 可以把某次运行取回来再 resume（所以恢复可以放在 HTTP 路由 / 审批后台里）。状态（`state`/`setState`）跨 suspend/resume 保留
 - **另一种做法（参考仓库阶段 4/6，本课不采用）**：用内置 `ask_user` 挂起 + `autoResumeSuspendedTools` 自动续跑，把控件类型（`text` / `single_select`）做成确定性字段映射 —— 适合"要给客户展示选项"的场景；我们这里审批人是我们自己的后台，直接 `resume` 更简单
-- **改动文件**：只重写 `src/mastra/workflows/after-sales.ts`（在判资格与回复之间插一步 `approval`）
+- **改动文件**：只重写 `src/mastra/workflows/after-sales.ts`（在判资格与回复之间插一步 `approval`，内部用 `orders` 取订单金额）、`src/mastra/index.ts` 不用动
 - **验收**：杀掉进程再启动，流程仍能续跑；快照可回放；同一个挂起点在不同答案下走不同分支
 - **待验证**：Studio 的 Workflows 页里挂起后能不能直接点恢复（界面行为未实测）；`createRun({ runId })` 跨进程恢复（runId 从库里取）是否正常
 - **文档（已核实 200）**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
@@ -185,9 +187,14 @@
 
 ### 第 10 课 · RAG：知识库与检索
 
-- **目标**：文档入库（chunk + embed + 存向量库）→ 检索工具 → agent 作答时引用来源；**语料就是售后政策原文（P1–P5）+ 常见故障说明**
+- **目标**：文档入库（chunk + embed + 存向量库）→ 检索工具 → agent 作答时引用来源；**语料就是售后政策原文（P1–P6）**
+- **依赖（新增）**：`pnpm add @mastra/rag` —— `MDocument`（切块）与 `createVectorQueryTool`（检索工具）都在这里；嵌入模型沿用第 5 课的硅基流动，不再新增 key
+- **新增文件**：`knowledge/embedder.ts`、`knowledge/policies.ts`、`workflows/ingest-policies.ts`、`tools/policy-search.ts`；覆盖 `agents/support-agent.ts`（挂检索工具）；`index.ts` 注册 `vectors` 与入库工作流
+- **依据（2026-10-02 核对随包文档）**：`MDocument.fromText(...)` → `doc.chunk({ strategy: "recursive", maxSize, overlap, separators })` → `embedMany({ model, values })`（`ai` 包）→ `vectorStore.createIndex({ indexName, dimension, metric })` → `vectorStore.upsert({ indexName, vectors, metadata })`；检索用 `createVectorQueryTool({ vectorStoreName, indexName, model })`，`vectorStoreName` 必须是 Mastra 实例 `vectors` 里注册的名字
+- **入库方式**：做成工作流 `ingest-policies`，在 Studio 的 Workflows 页跑一次（不依赖额外脚本运行器）；metadata 里带条款号，回答才能说清依据
 - **验收**：问「过了 15 天还能换新吗」→ 回答引用 P2 并给出正确结论；问政策里没写的事 → 明确说不知道，不编
-- **文档**：官方 RAG / 向量存储相关页（写课时确认路径）+ `/docs/storage`
+- **待验证**：`createIndex` 重复运行是否报错（重复入库前要先删旧索引）；`createVectorQueryTool` 的 `model` 接受 AI SDK 的 openai-compatible 嵌入模型
+- **文档（已核实 200）**：`/reference/rag/overview`、`/reference/rag/chunking-and-embedding`、`/reference/rag/retrieval`、`/reference/rag/vector-databases`
 
 ### 第 11 课 · Evals：评测即回归
 
