@@ -14,8 +14,8 @@
 | 1 | 初始化 | Next 一体化脚手架 / Mastra 实例 / Studio / Model Router | 起步 | 前端项目就位（`app/`） |
 | 2 | Agent 与模型 | Agent、instructions、会话记忆（Message History）、Model Router | 阶段 1（部分） | 定下全课场景：虚拟宇宙公司客服 |
 | 3 | 工具调用 | `createTool`、RequestContext | 阶段 2 | — |
-| 4 | 记忆（一）：长期记忆与客户档案 | Working Memory、Storage | 阶段 1 | 会话记忆第 2 课已有 |
-| 5 | 记忆（二）：语义召回与多用户 | Semantic Recall、Message History（token 预算）、Multi-User Threads | **未覆盖（我们补）** | — |
+| 4 | 工作记忆 | Working Memory、Storage | 阶段 1 | 会话记忆第 2 课已有 |
+| 5 | 语义召回 | Semantic Recall、Message History（token 预算）、Multi-User Threads | **未覆盖（我们补）** | — |
 | 6 | 接入前端：复用 lab-ai-sdk 的页面 | `@mastra/ai-sdk` 的 `handleChatStream()` / `toAISdkMessages()`、Server、Client | **未覆盖（我们补）** | 复用 lab-ai-sdk 第 4 课页面 |
 | 7 | 工作流（一）：把问答变成流程 | Workflow State、Control Flow、Agents & Tools | 阶段 3 | 复用第 6 课页面 |
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
@@ -109,20 +109,20 @@
 - **不讲 `structuredOutput`**：目前**没有可跑的载体**（Studio 不支持传 schema；脚本方式在现脚手架下跑不通），已从第 3 课移除；`coverage-matrix.md` 标记为「暂不进主线」，等有 route / HTTP 载体再定
 - **文档**：`/docs/agents/tools`、`/docs/agents`、`/docs/server/request-context`
 
-### 第 4 课 · 记忆（一）：长期记忆与客户档案
+### 第 4 课 · 工作记忆
 
-- **目标**：给 agent 加**长期记忆**：`options.workingMemory`（`enabled` + `schema`）把客户情况跨 thread 记住（会话记忆第 2 课已随 agent 一起配置）
+- **目标**：给 agent 加**长期记忆**：`options.workingMemory`（`enabled` + `schema`）把这次售后跨对话记住（商品 / 订单号 / 问题 / 已答复方案）（会话记忆第 2 课已随 agent 一起配置）
 - **依据（2026-10-01 核对 `@mastra/memory@1.33.0` 随包类型）**：`MemoryConfig` 的字段都在 `options` 下（不是扁平的）；`semanticRecall` **默认 `false`**；`workingMemory` 的 `schema` 是**合并语义**（只提交要改的字段，设 `null` 即删除）；`template` 与 `schema` 二选一
 - **只改一个文件**：`src/mastra/agents/support-agent.ts` —— 加 `workingMemory` + 字段（会话记忆第 2 课已有，这里只补长期记忆）
 - **存储不用动**：实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`）
 - **字段（`customerProfile`）**：`sku` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
-- **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；引导逻辑写进 instructions：不知道就先问一句 → 记下来 → 之后别再问
+- **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；写入靠提示词那行「客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来」
 - **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 13 课展开）
-- **验收**：新建 thread 后它仍认得这个客户（工作记忆按 `resource` 范围跨 thread 生效）
-- **待验证**：Studio 里工作记忆是否总能写入（依赖 agent 主动调 `updateWorkingMemory`）；Studio 新建 thread 时 `resourceId` 是否保持不变
+- **验收**：先聊「NX-1002 这台的金丝断裂，能换新吗」→ 新建对话问「我上次那件事怎么样了」→ 它答得出订单号 / 商品 / 已答复方案（工作记忆按 `resource` 范围跨对话生效；客户已由提示词固定为罗峰先生，不是靠记忆认人）
+- **待验证**：Studio 里工作记忆是否总能写入（依赖 agent 主动调 `updateWorkingMemory`）；Studio 新建对话时 `resourceId` 是否保持不变
 - **文档**：`/docs/memory/working-memory`、`/docs/memory/overview`、`/docs/storage`
 
-### 第 5 课 · 记忆（二）：语义召回与多用户
+### 第 5 课 · 语义召回
 
 - **目标**：开 `semanticRecall`（需 `vector` + `embedder`）、用 `messageHistory.maxTokens` 按 token 预算裁剪、用 `thread` / `resource` 区分会话与用户
 - **依赖（新增，**已按推荐实现，等用户确认**）**：`pnpm add @mastra/fastembed` —— DeepSeek 没有嵌入模型，`fastembed` 本地跑、不需要额外 key；另一条路是 `ModelRouterEmbeddingModel("openai/…")`（要 OpenAI / Google 的 key）

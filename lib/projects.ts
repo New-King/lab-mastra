@@ -309,7 +309,7 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
       "Agent — 一个 agent 就是 id、name 和 instructions，加上 model，用 new Agent({ ... }) 定义",
       "instructions — agent 长期遵守的工作手册：角色是什么、该先问什么、不做什么，都写在这里",
       'Model Router — 模型写成 "provider/model" 字符串（如 deepseek/deepseek-flash），Mastra 自动读取对应的环境变量',
-      "Memory — 挂到 Agent 上的会话记忆：new Memory({ options: { lastMessages: 20 } })，数据落到 Mastra 实例配置的 storage（脚手架已配好 libSQL）",
+      "Memory — 挂到 Agent 上的会话记忆：让 agent 接得住多轮对话；数据落到 Mastra 实例的 storage（脚手架已配好 libSQL）",
       "lastMessages — 每一轮带进上下文的最近消息条数（默认 10，设 false 关闭）",
       "Mastra 实例 — new Mastra({ agents }) 是应用入口；注册过的 agent 才会出现在 Studio 里",
     ],
@@ -677,23 +677,22 @@ export const supportAgent = new Agent({
   {
     kind: "project",
     slug: "memory-conversation",
-    title: "记忆（一）：长期记忆与客户档案",
-    menuTitle: "记忆（一）",
+    title: "工作记忆",
+    menuTitle: "工作记忆",
     summary:
-      "给 agent 加长期记忆：把客户信息写进工作记忆，新建 thread 也认得出这个客户。",
+      "给 agent 加长期记忆：把正在处理的这单（商品 / 订单号 / 问题 / 已答复方案）写进工作记忆，新建对话也接着办。",
     verify: {
       label: "去 Studio 试记忆",
       description: [
         "打开 http://localhost:4111/agents，选 support-agent",
-        "这是一个有长期记忆的客服 agent，新建 thread 后仍识别同一客户",
+        "这是一个带工作记忆的客服 agent，新建对话后仍记得正在处理的这一单：订单号、商品、问题、已答复的方案",
       ],
     },
     concepts: [
-      "workingMemory — agent 的跨轮记事本：记住这次处理到哪了（订单号、商品、问题、已答复的方案）；格式二选一，template（Markdown 文本块）或 schema（zod 对象），不能同时用",
-      "schema 的合并语义 — agent 只提交要改的字段，没提的保持不变；字段设成 null 就是删除",
-      "scope — 工作记忆与语义召回的作用范围：resource（默认，同一个用户的所有会话共享）或 thread（只在本会话内）",
-      "updateWorkingMemory — agent 写工作记忆用的内置工具；它该问什么、该记什么，由 instructions 决定",
-      "会话记忆与工作记忆的分工 — 前者是「这段对话」的原文（只在本 thread），后者是「这个客户」的档案（跨 thread）",
+      "workingMemory — agent 的工作记忆（通俗说就是它的长期记忆）：跨对话保留的一小块结构化档案，不是聊天记录",
+      "schema — 用 zod 定义档案有哪些字段；更新走合并语义：只提交要改的字段，没提的保持不变，传 null 才删除",
+      "updateWorkingMemory — 写档案用的内置工具：开了工作记忆就有，不用自己声明；什么时候记，由提示词决定",
+      "会话记忆 vs 工作记忆 — 会话记忆是「这段对话」的原文（第 2 课的 lastMessages），只在本对话内；工作记忆是 agent 自己写下的档案（订单号 / 商品 / 问题 / 已答复方案），跨对话都在",
     ],
     docLinks: [
       {
@@ -754,8 +753,8 @@ export const supportAgent = new Agent({
   {
     kind: "project",
     slug: "memory-recall",
-    title: "记忆（二）：语义召回与多用户",
-    menuTitle: "记忆（二）",
+    title: "语义召回",
+    menuTitle: "语义召回",
     summary:
       "让 agent 记得更久：把历史向量化做语义召回，按 token 预算裁剪上下文，并用 thread / resource 两个 id 决定它记得谁、记得哪一段。",
     verify: {
@@ -766,13 +765,11 @@ export const supportAgent = new Agent({
       ],
     },
     concepts: [
-      "semanticRecall — 把历史消息向量化，按语义相似度找回旧消息（默认关闭；开启需要 vector + embedder）",
-      "vector — 向量库：LibSQLVector 存本地文件，也可以换成其他向量存储",
-      "embedder — 嵌入模型：走 Model Router 用 provider/model（需要对应 provider 的 key），或本地的 fastembed",
-      "@mastra/fastembed — 本地跑的嵌入模型，不需要额外的 API Key",
-      "messageHistory.maxTokens — 按 token 预算裁剪进上下文的历史（atMaxRemoveTokens 一次删多少，设 0 关闭）；与 lastMessages 同时写就是条数 + 预算双重上限",
-      "thread / resource — thread 是一条会话，resource 是会话归属的用户；两者一起决定 agent 记得谁、记得哪一段历史",
-      "多用户线程 — 多人共用一条 thread 时，把说话人身份写进消息正文，agent 才能分清谁在说",
+      "semanticRecall — 把历史消息向量化，按语义相似度找回旧消息：换了对话也捞得回来（默认关闭，开启要 vector + embedder）",
+      "vector — 存这些向量的库：LibSQLVector 直接存本地文件",
+      "embedder — 把文字变成向量的模型；DeepSeek 没有，所以用本地的 @mastra/fastembed（不需要额外 API Key）",
+      "messageHistory.maxTokens — 按 token 预算裁掉太旧的历史；lastMessages 管条数，两个都写就是条数 + 预算双重上限",
+      "scope — 记忆的作用范围：resource（默认）＝同一客户的所有对话共享，thread＝只在本对话内；resource 是客户、thread 是一条对话，工作记忆和语义召回都用这个开关",
     ],
     docLinks: [
       {
@@ -854,11 +851,11 @@ export const supportAgent = new Agent({
       ],
     },
     concepts: [
-      "handleChatStream — 把 agent 的一次运行输出成 AI SDK 的消息流（@mastra/ai-sdk），前端协议不用改",
+      "handleChatStream — 把 agent 的一次运行输出成 AI SDK 的消息流，前端协议不用改",
       "createUIMessageStreamResponse — AI SDK 的响应助手：把这条流按 UI 消息协议返回给客户端",
-      "toAISdkMessages — 把 memory 里的消息转成 AI SDK 的 UIMessage（刷新页面时喂给 useChat）",
-      "getMemory / recall — 从 agent 拿到 memory，按 threadId + resourceId 读回历史消息",
-      "version — handleChatStream 与 toAISdkMessages 要和你安装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）",
+      "toAISdkMessages — 把 memory 里的消息转成 AI SDK 的 UIMessage，刷新页面时喂给 useChat",
+      "getMemory / recall — 从 agent 拿到 memory，按对话 id + 客户 id 读回历史消息",
+      "version — handleChatStream 与 toAISdkMessages 要和你装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）",
     ],
     docLinks: [
       {
