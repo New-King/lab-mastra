@@ -1947,6 +1947,340 @@ workflows: {
       },
     ],
   },
+  {
+    kind: "project",
+    slug: "evals",
+    title: "评测：把回归测试跑起来",
+    menuTitle: "评测",
+    summary:
+      "给 agent 配一套会自己判分的案例集：改提示词、换模型之后，跑一遍就知道有没有变差。",
+    verify: {
+      label: "跑一遍评测",
+      description: [
+        "在 my-mastra-app 目录执行 pnpm dlx tsx src/mastra/evals/run.ts",
+        "这是一个带评测的客服 agent：固定案例集会逐个问一遍，再用两个 scorer 打分，未达阈值时命令以失败退出",
+      ],
+    },
+    concepts: [
+      "createScorer — 定义一个打分器：id、description，再链上 .analyze() 与 .generateScore()（来自 @mastra/core/evals）",
+      "确定性 scorer — 所有步骤都用函数写时不会调用 judge 模型：便宜、稳定、可进 CI，适合「有没有引用条款」「有没有越权承诺」这类判断",
+      "runEvals — 跑案例集：{ target, data, gates, scorers }，每个案例问一次 target 再打分",
+      "gates 与阈值 — gates 必须全部 1.0（红线，如越权承诺）；普通 scorer 可以带 threshold，低于阈值 verdict 变 scored",
+      "verdict 与 CI — 结果是 passed / scored / failed：不是 passed 就让进程退出码非 0，这就是 CI 里的那条红线；官方另有 prebuilt scorers（@mastra/evals，用 judge 模型）",
+    ],
+    docLinks: [
+      { title: "Evals 总览", href: "https://mastra.ai/docs/evals/overview" },
+      { title: "自定义 Scorer", href: "https://mastra.ai/docs/evals/custom-scorers" },
+      { title: "Gates 与 Verdict", href: "https://mastra.ai/docs/evals/gates-and-verdicts" },
+      { title: "在 CI 里跑", href: "https://mastra.ai/docs/evals/running-in-ci" },
+    ],
+    files: [
+      {
+        path: "src/mastra/evals/scorers.ts",
+        order: 1,
+        action: "create",
+        hint: "两个确定性打分器：有没有引用条款、有没有越权承诺",
+        code: `import { createScorer } from "@mastra/core/evals";
+
+// ① 确定性 scorer：不调模型，只看回答里有没有引用条款编号（P1–P6）
+export const citesPolicyScorer = createScorer({
+  id: "cites-policy",
+  description: "回答是否引用了售后政策条款编号",
+})
+  .analyze(({ run }) => ({ cited: /P[1-6]/.test(run.output ?? "") }))
+  .generateScore(({ results }) => (results.analyzeStepResult.cited ? 1 : 0));
+
+// ② 确定性 scorer：有没有超出政策的承诺（客服最容易犯的错）
+export const noOverPromiseScorer = createScorer({
+  id: "no-over-promise",
+  description: "回答里有没有「保证 / 一定能」这类越权承诺",
+})
+  .analyze(({ run }) => ({ over: /保证|一定能|肯定能/.test(run.output ?? "") }))
+  .generateScore(({ results }) => (results.analyzeStepResult.over ? 0 : 1));
+`,
+      },
+      {
+        path: "src/mastra/evals/cases.ts",
+        order: 2,
+        action: "create",
+        hint: "固定案例集 —— 挑业务里真正会出错的问法",
+        code: `// 固定案例集：放进版本控制，改提示词 / 换模型后拿它回归
+// 案例要覆盖业务里真正会出错的点，而不是「你好」这种
+export const evalCases = [
+  { input: "生命之水能退吗" },
+  { input: "我这单 15 天前签收的，坏了能换新吗" },
+  { input: "你们有飞行器吗" },
+  { input: "我这单能退吗" },
+];
+`,
+      },
+      {
+        path: "src/mastra/evals/run.ts",
+        order: 3,
+        action: "create",
+        hint: "跑一遍并把结果变成退出码（CI 用同一条命令）",
+        code: `import { runEvals } from "@mastra/core/evals";
+import { supportAgent } from "../agents/support-agent";
+import { evalCases } from "./cases";
+import { citesPolicyScorer, noOverPromiseScorer } from "./scorers";
+
+// 跑一遍案例集：每个案例问一次 agent，再用两个 scorer 打分
+const result = await runEvals({
+  target: supportAgent,
+  data: evalCases,
+  // gates 必须全部 1.0，否则这次评测直接失败（越权承诺是红线）
+  gates: [noOverPromiseScorer],
+  // 普通 scorer 可以设阈值：低于阈值 verdict 会变成 scored
+  scorers: [{ scorer: citesPolicyScorer, threshold: 0.6 }],
+});
+
+console.log("verdict:", result.verdict);
+console.log(JSON.stringify(result.scores ?? {}, null, 2));
+
+// 门禁：不是 passed 就以失败退出，CI 里就是一条红线
+if (result.verdict !== "passed") {
+  process.exit(1);
+}
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "observability",
+    title: "观测：用 trace 定位问题",
+    menuTitle: "观测",
+    summary:
+      "打开观测开关，把每步都记下来：一次会话里模型、工具、workflow 各走了什么，在 Studio 里一眼看完。",
+    verify: {
+      label: "去 Studio 看 trace",
+      description: [
+        "先在 http://localhost:4111 跟 support-agent 聊一句，再打开 Studio 的 Observability 页",
+        "这是一个带观测的客服 agent：刚才那次会话的每个步骤、工具入参出参、耗时与 token 都在 trace 里，答错时能直接定位是哪一步掉的",
+      ],
+    },
+    concepts: [
+      "Trace / Span — 一次请求是一条 trace，里面每个步骤（模型调用、工具、workflow 步骤）是一个 span：排查靠它，不靠模型自述",
+      "Observability 配置 — 脚手架已经在 index.ts 里配好：serviceName + 两个 exporter（写入 Mastra 存储、上报 Mastra 平台）",
+      "MastraStorageExporter / MastraPlatformExporter — 前者把事件落进 storage（Studio 读得到），后者在配了平台 token 时上报云端",
+      "SensitiveDataFilter — span 输出处理器：把 token、密码这类敏感字段从记录里抹掉，再进存储",
+      "PinoLogger — 结构化日志：级别用环境变量控制，部署时不用改代码；Studio 的 Observability 页把 trace 与日志放在一起看",
+    ],
+    docLinks: [
+      { title: "Tracing 总览", href: "https://mastra.ai/docs/observability/tracing/overview" },
+      { title: "Logging", href: "https://mastra.ai/docs/observability/logging" },
+      { title: "Metrics", href: "https://mastra.ai/docs/observability/metrics/overview" },
+      { title: "Studio Observability", href: "https://mastra.ai/docs/studio/observability" },
+    ],
+    files: [
+      {
+        path: "src/mastra/index.ts",
+        order: 1,
+        action: "edit",
+        hint: "观测是脚手架已经配好的：这里只改服务名与日志级别（别整体覆盖）",
+        code: `// 改动：日志名换成自己的项目，级别走环境变量
+logger: new PinoLogger({
+  name: "my-mastra-app",
+  level: process.env.LOG_LEVEL ?? "info",
+}),
+
+// 观测配置其余部分保持脚手架生成的样子（两个 exporter + SensitiveDataFilter）
+observability: new Observability({
+  configs: {
+    default: {
+      serviceName: "my-mastra-app",
+    },
+  },
+}),
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "guardrails",
+    title: "护栏：在进模型前后各拦一道",
+    menuTitle: "护栏",
+    summary:
+      "输入侧挡注入、遮联系方式，输出侧拦不合规内容：让违规的东西进不来也出不去。",
+    verify: {
+      label: "去 Studio 试护栏",
+      description: [
+        "打开 http://localhost:4111/agents，选 support-agent",
+        "这是一个带护栏的客服 agent：越狱式输入会被拦下，消息里的手机号 / 邮箱会先被遮掉，不合规输出会被拦或改写",
+      ],
+    },
+    concepts: [
+      "inputProcessors / outputProcessors — 挂在 Agent 上的前后置处理链：进模型前处理输入，出模型后处理输出",
+      "PromptInjectionDetector — 内置输入处理器：识别注入、越狱与「忽略上面的指令」这类模式，可拦下或改写",
+      "ModerationProcessor — 内置处理器：按分类判断不当内容（仇恨、骚扰、暴力等），输入输出都能放",
+      "自定义 Processor — 实现 Processor 接口即可：processInput 收到消息数组，正文在 content.parts 里，返回新数组替换；敏感信息脱敏就是这么写的",
+      "processInputStep — 每个 agent 步骤都会跑的钩子（含工具调用之后），适合每步换模型、改工具选择",
+    ],
+    docLinks: [
+      { title: "Guardrails", href: "https://mastra.ai/docs/agents/guardrails" },
+      { title: "Processors", href: "https://mastra.ai/docs/agents/processors" },
+      { title: "Processor 接口", href: "https://mastra.ai/reference/processors/processor-interface" },
+    ],
+    files: [
+      {
+        path: "src/mastra/processors/mask-contact.ts",
+        order: 1,
+        action: "create",
+        hint: "自定义输入处理器：把手机号 / 邮箱换成占位符",
+        code: `import type { Processor, ProcessInputArgs } from "@mastra/core/processors";
+import type { MastraDBMessage } from "@mastra/core/memory";
+
+// 自定义输入处理器：客户误发手机号 / 邮箱时，先把它们换成占位符再进模型
+// （第 13 课的原则：不索要、不回显、也不让它进入上下文）
+export class MaskContactInfo implements Processor {
+  id = "mask-contact-info";
+
+  async processInput({
+    messages,
+  }: ProcessInputArgs): Promise<MastraDBMessage[]> {
+    return messages.map((message) => ({
+      ...message,
+      content: {
+        ...message.content,
+        parts: message.content.parts?.map((part) =>
+          part.type === "text"
+            ? {
+                ...part,
+                text: part.text
+                  .replace(/1[3-9][0-9]{9}/g, "[手机号已隐藏]")
+                  .replace(
+                    /[A-Za-z0-9._-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/g,
+                    "[邮箱已隐藏]",
+                  ),
+              }
+            : part,
+        ),
+      },
+    }));
+  }
+}
+`,
+      },
+      {
+        path: "src/mastra/agents/support-agent.ts",
+        order: 2,
+        action: "replace",
+        hint: "给 agent 挂上输入 / 输出处理器，其余保持上一课的样子",
+        code: `import { Agent } from "@mastra/core/agent";
+import { Memory } from "@mastra/memory";
+import { LibSQLVector } from "@mastra/libsql";
+import { ModerationProcessor, PromptInjectionDetector } from "@mastra/core/processors";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { z } from "zod";
+import { listProducts, findOrders } from "../tools/lookup-tool";
+import { checkReturnEligibility } from "../tools/return-tool";
+import { policySearch } from "../tools/policy-search";
+import { MaskContactInfo } from "../processors/mask-contact";
+
+const siliconflow = createOpenAICompatible({
+  name: "siliconflow",
+  baseURL: "https://api.siliconflow.cn/v1",
+  apiKey: process.env.SILICONFLOW_API_KEY,
+});
+
+const customerProfile = z.object({
+  sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
+  orderId: z.string().optional().describe("装备或配件订单号，例如 NX-1002"),
+  issue: z.string().optional().describe("正在处理的售后问题，例如 金丝断裂"),
+  promise: z.string().optional().describe("已经答复客户的处理方案，例如 已告知可换新（P2）"),
+});
+
+export const supportAgent = new Agent({
+  id: "support-agent",
+  name: "虚拟宇宙公司客服",
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
+- listProducts：查在售商品与售后政策
+- findOrders：查订单（可按商品名筛）
+- checkReturnEligibility：判退换资格，不要自己推算天数
+- policySearch：查售后政策原文（P1–P6）；答政策问题时，在回答里说清依据哪一条
+- 能用工具解决的，优先用工具，不要麻烦客户
+- 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
+- 已经答复过的方案不要改口
+- 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
+  model: "deepseek/deepseek-flash",
+  tools: { listProducts, findOrders, checkReturnEligibility, policySearch },
+  // 入口护栏：先挡注入，再把联系方式遮掉
+  inputProcessors: [
+    new PromptInjectionDetector({ model: "deepseek/deepseek-flash" }),
+    new MaskContactInfo(),
+  ],
+  // 出口护栏：不合规内容拦下或改写
+  outputProcessors: [
+    new ModerationProcessor({ model: "deepseek/deepseek-flash" }),
+  ],
+  memory: new Memory({
+    vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
+    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
+    options: {
+      lastMessages: 20,
+      messageHistory: { maxTokens: 8000 },
+      semanticRecall: { topK: 3, messageRange: 2, scope: "resource" },
+      workingMemory: { enabled: true, schema: customerProfile },
+    },
+  }),
+});
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "deploy",
+    title: "上线：存储、鉴权与部署",
+    menuTitle: "上线",
+    summary:
+      "把本地这套搬到线上：换生产存储、给 API 加鉴权、构建产物部署，重启后未跑完的流程还能接着跑。",
+    verify: {
+      label: "带 token 才能访问",
+      description: [
+        "重新启动 Studio，再用命令行请求一次 API（不带 token 会被拒）",
+        "这是一个加了鉴权的客服服务：只有带 token 的调用才有响应；未跑完的 workflow 在重启后能继续跑完；构建产物在 .mastra/output 下",
+      ],
+    },
+    concepts: [
+      "SimpleAuth — 最简鉴权：token 到用户的映射表，够开发和内部 API 用（来自 @mastra/core/server，挂在 server.auth 上）",
+      "JWT / FGA — 生产形态：JWT 对接你自己的登录体系，FGA 做细粒度授权（谁能看哪个客户）",
+      "生产存储 — 把 LibSQL 换成本地之外的选择：TURSO_DATABASE_URL + TURSO_AUTH_TOKEN，index.ts 里那行 url 本来就是为它留的",
+      "构建与产物 — pnpm exec mastra build 把服务打包到 .mastra/output，再按部署平台启动；Studio 只在本地用",
+      "重启续跑 — workflow 的每一步快照都在 storage 里，所以进程重启后未完成的运行能从断点继续（第 8 课的能力在线上才真正值钱）",
+    ],
+    docLinks: [
+      { title: "Storage", href: "https://mastra.ai/docs/storage" },
+      { title: "Simple Auth", href: "https://mastra.ai/docs/auth/simple-auth" },
+      { title: "部署 Mastra Server", href: "https://mastra.ai/docs/deployment/mastra-server" },
+      { title: "Server Middleware", href: "https://mastra.ai/docs/server/middleware" },
+    ],
+    files: [
+      {
+        path: "src/mastra/index.ts",
+        order: 1,
+        action: "edit",
+        hint: "给服务加鉴权（其余配置不动；生产环境把 token 换成环境变量）",
+        code: `// ① 顶部加 import
+import { SimpleAuth } from "@mastra/core/server";
+
+// ② 定义一个操作员类型，token 从哪里来由你决定（示例写死，生产放环境变量）
+type Operator = { id: string; name: string; role: "admin" | "agent" };
+
+// ③ 在 new Mastra({ ... }) 里加 server 一项
+server: {
+  auth: new SimpleAuth<Operator>({
+    tokens: {
+      "sk-admin-token": { id: "op-1", name: "主管", role: "admin" },
+      "sk-agent-token": { id: "op-2", name: "客服", role: "agent" },
+    },
+  }),
+},
+`,
+      },
+    ],
+  },
 ];
 
 export function getNavItem(slug: string): NavItem | undefined {

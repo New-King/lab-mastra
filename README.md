@@ -47,8 +47,10 @@ lab-mastra/
 第 8 课  重写 workflows/after-sales.ts（插入 approval 步骤：suspend / resume）
 第 9 课  after-sales.ts 加重试与 onError + 新建 workflows/daily-check.ts（cron 定时巡检）+ index.ts 注册
 第 10 课 新增 knowledge/{embedder,policies}.ts + workflows/ingest-policies.ts（入库）+ tools/policy-search.ts（检索）@mastra/rag
-第 11~12 课 新增 evals/、observability 配置
-第 13~14 课 storage / auth / 部署
+第 11 课 新增 evals/{scorers,cases,run}.ts（确定性 scorer + gates + verdict，无新增依赖）
+第 12 课 只改 index.ts（logger 名与级别；观测配置脚手架已有）
+第 13 课 新增 processors/mask-contact.ts（自定义脱敏）+ 覆盖 agent（挂输入/输出处理器）
+第 14 课 只改 index.ts（server.auth = SimpleAuth）+ mastra build 部署
 ```
 
 ## 技术栈

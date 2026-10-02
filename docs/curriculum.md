@@ -21,10 +21,10 @@
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
 | 9 | 工作流（三）：容错与定时 | Error Handling、Scheduled Workflows、Background Tasks、Schedules | 部分（模板有定时） | — |
 | 10 | RAG：知识库与检索 | 向量存储、检索工具、chunking / rerank | 阶段 8 | `data-*` part 显示来源 |
-| 11 | Evals：评测即回归 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
-| 12 | Observability：追踪与指标 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
-| 13 | Guardrails 与 Processors | Guardrails、Processors（过滤 / 脱敏 / 注入防护） | **未覆盖（我们补）** | — |
-| 14 | 上线：存储、鉴权、部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
+| 11 | 评测：把回归测试跑起来 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
+| 12 | 观测：用 trace 定位问题 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
+| 13 | 护栏：在进模型前后各拦一道 | Guardrails、Processors（过滤 / 脱敏 / 注入防护） | **未覆盖（我们补）** | — |
+| 14 | 上线：存储、鉴权与部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
 
 > 「参考仓库」= `my19940202/mastra-agent`，分析见 `docs/reference-repo-notes.md`。
 
@@ -196,37 +196,50 @@
 - **待验证**：`createIndex` 重复运行是否报错（重复入库前要先删旧索引）；`createVectorQueryTool` 的 `model` 接受 AI SDK 的 openai-compatible 嵌入模型
 - **文档（已核实 200）**：`/reference/rag/overview`、`/reference/rag/chunking-and-embedding`、`/reference/rag/retrieval`、`/reference/rag/vector-databases`
 
-### 第 11 课 · Evals：评测即回归
+### 第 11 课 · 评测：把回归测试跑起来
 
 - **目标**：定义评测集与 scorer，在 CI 里跑；分数低于阈值时门禁失败
 - **能力**：Built-in Scorers、Custom Scorers、Datasets、Quick Checks、Gates and Verdicts、Running in CI、Vitest
 - **做法（借参考仓库阶段 5）**：先写**不调用 judge 模型**的确定性 scorer（例如"一轮里只能问一个问题"、"必须带免责声明"），省钱且可回归；固定案例集放进 `src/mastra/evals/` 版本控制，之后可迁到 Studio Dataset；讲清三者分工 —— **Dataset 出题、Scorer 打分、Trace 定位是哪一步掉了分**
-- **验收**：`pnpm test` 能跑评测；改坏提示词后评测失败
-- **文档**：`/docs/evals/built-in-scorers`、`/docs/evals/custom-scorers`、`/docs/evals/datasets`、`/docs/evals/gates-and-verdicts`、`/docs/evals/running-in-ci`
+- **依赖**：无新增 —— `createScorer` 与 `runEvals` 都在 `@mastra/core/evals`；prebuilt scorers（用 judge 模型）才需要另装 `@mastra/evals`
+- **新增文件**：`src/mastra/evals/{scorers,cases,run}.ts`
+- **依据（2026-10-02 核对随包文档）**：`createScorer({ id, description }).analyze(...).generateScore(...)`（全函数步骤不调 judge）；`runEvals({ target, data, gates, scorers })`，`gates` 必须全部 1.0，普通 scorer 可带 `threshold`；返回 `result.verdict`（`passed` / `scored` / `failed`）+ `scores`
+- **验收**：`pnpm dlx tsx src/mastra/evals/run.ts` 能跑完案例集；把提示词改坏（例如去掉「说清依据哪一条」）后 verdict 不是 passed、进程退出码非 0
+- **待验证**：`pnpm dlx tsx` 在学员机器上首次会下载 tsx（离线环境需换成本地 tsx 或 vitest）；`result.scores` 的具体结构未实跑打印
+- **文档（已核实 200）**：`/docs/evals/overview`、`/docs/evals/custom-scorers`、`/docs/evals/gates-and-verdicts`、`/docs/evals/running-in-ci`
 
-### 第 12 课 · Observability：追踪与指标
+### 第 12 课 · 观测：用 trace 定位问题
 
 - **目标**：一次会话能看到完整 trace（步骤、工具调用、token、耗时、错误），并接入日志与指标
 - **能力**：Traces（Usage / Logging / Feedback / Storage）、Metrics、Studio Observability
 - **立论（借参考仓库阶段 6）**：**排查靠 Trace，不靠模型自述** —— 模型的 `reasoning` 不是业务输出，可以设为 `none`；要看"为什么答错"就去看工具入参出参、workflow 走哪个分支、Working Memory 当时是什么
+- **脚手架已配好**（不用新装包）：`index.ts` 里已有 `PinoLogger` + `Observability({ configs: { default: { serviceName, exporters: [MastraStorageExporter, MastraPlatformExporter], spanOutputProcessors: [SensitiveDataFilter] } } })`，观测数据落在 `MastraCompositeStore` 的 `domains.observability`（DuckDB）
+- **改动文件**：只改 `index.ts` 里 logger 的 name 与 level（level 走 `LOG_LEVEL` 环境变量）
 - **验收**：Studio 里能定位"这一步为什么慢 / 为什么答错"
-- **文档**：`/docs/observability/tracing/overview`、`/docs/observability/logging`、`/docs/observability/metrics/overview`、`/docs/observability/feedback`、`/docs/studio/observability`
+- **待验证**：Studio Observability 页里 trace 的字段与本文描述一致；DuckDB 存储文件在本地项目里的落点
+- **文档（已核实 200）**：`/docs/observability/tracing/overview`、`/docs/observability/logging`、`/docs/observability/metrics/overview`、`/docs/studio/observability`
 
-### 第 13 课 · Guardrails 与 Processors
+### 第 13 课 · 护栏：在进模型前后各拦一道
 
 - **目标**：输入侧拦注入 / 输出侧脱敏；对不合规内容返回兜底话术
 - **能力**：Guardrails、Processors
 - **与业务字段的关系（借参考仓库阶段 6）**：事实、授权、联系方式**分开保存**；授权记录必须同时具备 `granted` + 用途版本 + 完整范围 + 用户原话，只有一个布尔不算授权；用户拒绝或撤回后必须强制关闭后续采集
-- **验收**：构造越狱输入被拦；输出里的敏感信息被脱敏；撤回授权后不再采集联系方式
-- **文档**：`/docs/agents/guardrails`、`/docs/agents/processors`
+- **依据（2026-10-02 核对随包文档）**：处理器挂在 Agent 上：`inputProcessors` / `outputProcessors`；内置的来自 `@mastra/core/processors`（`PromptInjectionDetector`、`ModerationProcessor`、`UnicodeNormalizer`、`TokenLimiter` 等）；自定义实现 `Processor` 接口（`processInput({ messages })` → 返回新消息数组，正文在 `content.parts` 里，只改 `type === "text"` 的 part）
+- **新增/改动文件**：`src/mastra/processors/mask-contact.ts`（自定义脱敏）+ 覆盖 `agents/support-agent.ts`（挂前后处理器）
+- **验收**：构造越狱输入被拦；消息里的手机号 / 邮箱在进模型前被换成占位符；不合规输出被拦或改写
+- **待验证**：`PromptInjectionDetector` / `ModerationProcessor` 用 DeepSeek 模型的分类效果；被拦下时返回给客户的话术是否可定制
+- **文档（已核实 200）**：`/docs/agents/guardrails`、`/docs/agents/processors`、`/reference/processors/processor-interface`
 
-### 第 14 课 · 上线：存储、鉴权、部署
+### 第 14 课 · 上线：存储、鉴权与部署
 
 - **目标**：换生产存储、加鉴权、部署到云；重启后 workflow 能续跑
 - **能力**：Storage、Auth（Simple / JWT / FGA）、Deploy（Mastra Server / Cloud Providers / Workflow Runners / Workers / Web Framework）、Server Middleware
 - **上线清单（借参考仓库阶段 9）**：鉴权与权限、敏感字段加密 + 日志脱敏、数据访问审计与保存期限 / 删除机制、用户撤回授权、Prompt 注入防护、限流与异常兜底、部署后的监控告警
-- **验收**：公网访问需鉴权；服务重启后未完成的流程继续跑完；日志里看不到敏感字段
-- **文档**：`/docs/storage`、`/docs/auth/simple-auth`、`/docs/auth/jwt`、`/docs/auth/fga`、`/docs/deployment/mastra-server`、`/docs/deployment/cloud-providers`、`/docs/deployment/workflow-runners`、`/docs/server/middleware`
+- **依据（2026-10-02 核对随包文档）**：`SimpleAuth` 来自 `@mastra/core/server`，挂在 `new Mastra({ server: { auth: new SimpleAuth<User>({ tokens: { ... } }) } })`；构建产物用 `pnpm exec mastra build` 生成到 `.mastra/output/`
+- **改动文件**：只改 `index.ts`（加 `server.auth`）；生产 token 走环境变量
+- **验收**：不带 token 的请求被拒；服务重启后未完成的流程继续跑完；日志里看不到敏感字段
+- **待验证**：`mastra build` + 启动产物在本项目里能跑通（未实跑）；curl 带 / 不带 token 的实际响应码
+- **文档（已核实 200）**：`/docs/storage`、`/docs/auth/simple-auth`、`/docs/auth/jwt`、`/docs/deployment/mastra-server`、`/docs/deployment/cloud-providers`、`/docs/server/middleware`
 
 ---
 
