@@ -838,7 +838,7 @@ export const supportAgent = new Agent({
         path: "src/mastra/agents/support-agent.ts",
         order: 1,
         action: "replace",
-        hint: "只改 memory 这一段（加 vector + embedder + 语义召回），其余保持上一课的样子",
+        hint: "只改 memory 这一段（加 vector + embedder + 语义召回）；数据库连接由 src/mastra/index.ts 的 storage 提供，这个文件本课不用动",
         code: `import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { LibSQLVector } from "@mastra/libsql";
