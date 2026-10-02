@@ -907,8 +907,8 @@ export const supportAgent = new Agent({
     verify: {
       label: "打开页面验证",
       description: [
-        "打开 http://localhost:3000（Studio 在 http://localhost:4111）",
-        "这是一个接在自定义前端上的客服 agent，刷新页面后历史保留",
+        "打开 http://localhost:3000，聊一句，刷新页面历史还在（说明消息落进了数据库）",
+        "这是一个接在自定义前端上的客服 agent，不依赖 Studio",
       ],
     },
     concepts: [
@@ -940,7 +940,7 @@ export const supportAgent = new Agent({
         path: "app/api/generate/route.ts",
         order: 1,
         action: "create",
-        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
+        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）。若页面打不开、报 \"@duckdb/node-bindings-<平台>\" 之类的 Module not found：说明你的项目是默认模板建的、自带 observability 的 DuckDB（原生模块、按平台分包，Next 打包器把每个平台的分支都当依赖找）—— 在 next.config.ts 加 serverExternalPackages: [\"@mastra/duckdb\", \"@duckdb/node-api\", \"@duckdb/node-bindings\"] 即可（课程脚手架用 --no-observability，正常不会有这一层）",
         code: `import { handleChatStream } from "@mastra/ai-sdk";
 import { toAISdkMessages } from "@mastra/ai-sdk/ui";
 import { createUIMessageStreamResponse } from "ai";
@@ -1003,28 +1003,8 @@ export async function DELETE(req: Request) {
 `,
       },
       {
-        path: "src/mastra/index.ts",
-        order: 2,
-        action: "edit",
-        hint: "只改 storage 里的一行：把数据库路径从相对路径换成绝对路径 —— 否则 Studio 和网页各建一份库，两边数据互不相通",
-        code: `// 改动前
-url: process.env.TURSO_DATABASE_URL ?? "file:./mastra.db",
-
-// 这一行管什么：memory 的消息、工作记忆、向量都写在这个 libSQL 文件里
-// 为什么要改：file:./xxx 是相对「进程的工作目录」，而两个进程的工作目录不一样
-//           实测：mastra dev 会把库建到 src/mastra/public/mastra.db，不是项目根
-// 不改会怎样：Studio 和网页各读写一份库 —— 在 Studio 里聊的记录，网页上根本看不到
-
-// 改动后（换成你机器上的绝对路径）
-url: process.env.TURSO_DATABASE_URL ?? "file:/Users/you/my-mastra-app/mastra.db",
-
-// 怎么验证改对了：两个进程都跑起来后，项目里只该存在这一份 mastra.db；
-// 在 Studio 里聊一句，刷新网页也能看到（反过来也一样）
-`,
-      },
-      {
         path: "app/page.tsx",
-        order: 3,
+        order: 2,
         action: "create",
         hint: "前端页面：useChat + DefaultChatTransport 消费 /api/generate，含刷新水合（GET）与清空对话（DELETE）",
         code: `"use client";
