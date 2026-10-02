@@ -67,7 +67,7 @@
 
 - **目标**：跑通 Next 一体化项目（前端 `app/` + Mastra `src/mastra/`），Studio 里能看到示例 agent
 - **命令**（官方 Next.js 指南的写法）：
-  - `pnpm dlx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
+  - `pnpm dlx create-next-app@latest my-mastra-app --yes --ts --eslint --tailwind --app --turbopack --import-alias "@/*"`（用**根 `app/`**，与 lab-ai-sdk 一致，第 6 课才能直接复用它的页面）
   - `cd my-mastra-app && pnpm dlx mastra@latest init --default --no-observability`（`--default` = 位置 `src/` + 提供商 OpenAI + 示例代码；**不要让 agent 走交互提问——它没有 TTY，会卡住**；也不要只带 `--llm` 这类部分参数，不带 `-c` 时不会生成示例）
   - `.env`：API Key 留空时 `init` 只生成 `.env.example` → `cp .env.example .env`，再把变量名改成 `DEEPSEEK_API_KEY`
   - `pnpm exec mastra dev` → Studio `http://localhost:4111`；另开一个终端 `pnpm dev` → 应用 `http://localhost:3000`
@@ -81,7 +81,8 @@
   - **不往 `package.json` 加脚本**（所以 Studio 用 `pnpm exec mastra dev`）；API Key 留空时只写 `.env.example`，**不动 `.env`**；**不重新 `git init`**
   - 走交互式时：**会改写项目根的 `AGENTS.md` / `CLAUDE.md`，并写入 `.agents/` + `skills-lock.json`**（走 `--default` 则跳过这两项）
   - 结尾的 `PostHogFetchNetworkError` 只是遥测上报失败，不影响初始化（可用 `MASTRA_TELEMETRY_DISABLED=1` 消除）
-- **待验证**：`pnpm exec mastra dev` 与 `pnpm dev` 在同一项目里并行运行；`create-next-app` 的 `--no-react-compiler` / `--no-import-alias` 写法（未出现在 `--help` 里）
+- **已核实（2026-10-02，跑 `create-next-app --help`）**：不存在 `--no-react-compiler` / `--no-import-alias`，命令改用显式 `--import-alias "@/*"`；第 6 课 route 用 `@/src/mastra` 别名导入
+- **待验证**：`pnpm exec mastra dev` 与 `pnpm dev` 在同一项目里并行运行
 
 ### 第 2 课 · Agent 与模型
 

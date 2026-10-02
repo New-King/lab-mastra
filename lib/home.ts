@@ -41,7 +41,7 @@ export const HOME = {
         "Mastra 支持 AI SDK：@mastra/ai-sdk 的 handleChatStream() 把 agent 输出成 AI SDK 的消息流（第 6 课）。",
       ],
       bullets: [
-        "AI SDK（见 lab-ai-sdk）— 服务端 Core（generateText / streamText / generateObject）+ UI 端（消息流协议、hooks 与前端渲染）。",
+        "AI SDK — 两半：服务端（generateText / streamText / generateObject）与 UI 端（消息流协议、useChat 等 hooks）；本课程的聊天页面用的就是它的 UI 端。",
         "Mastra（本 Lab）— Agent / Workflow / Memory / RAG / Evals / Observability，对应记忆、编排、审批、容错、评测。",
       ],
     },

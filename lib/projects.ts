@@ -227,8 +227,8 @@ export const PROJECT_DIR = "my-mastra-app";
 
 export const INIT_STEPS: CommandStep[] = [
   {
-    description: "在你选定的目录下创建 Next.js 项目（根 app/ 目录，与 lab-ai-sdk 一致）。",
-    command: `pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias`,
+    description: "在你选定的目录下创建 Next.js 项目（前端放根 app/，Mastra 放 src/mastra/）。",
+    command: `pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --import-alias "@/*"`,
   },
   {
     description: "初始化 Mastra，生成 src/mastra/（推荐直接用这条带参数命令，跳过交互提问）。",
@@ -273,7 +273,7 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
 
 执行步骤：
 
-1. 进入 <父目录>，执行 pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --no-react-compiler --no-import-alias
+1. 进入 <父目录>，执行 pnpm dlx create-next-app@latest ${PROJECT_DIR} --yes --ts --eslint --tailwind --app --turbopack --import-alias "@/*"
 2. 进入 ${PROJECT_DIR}，执行 pnpm dlx mastra@latest init --default --no-observability
    --default = 位置 src/ + 提供商 OpenAI + 示例代码（agents/weather-agent.ts、tools/weather-tool.ts、workflows/weather-workflow.ts）。
    不要走交互问答（执行环境没有 TTY，会卡住）；也不要只带 --llm 这类部分参数——不带 -c 时不会生成示例。
@@ -896,10 +896,10 @@ export const supportAgent = new Agent({
   {
     kind: "project",
     slug: "chat-ui",
-    title: "接入前端：复用 lab-ai-sdk 的页面",
+    title: "接入前端：用 AI SDK UI 聊天",
     menuTitle: "接入前端",
     summary:
-      "换成 lab-ai-sdk 的前端：加一个 API 路由把 agent 的输出转成 AI SDK 的消息流，页面原样搬过来就能用。",
+      "给 agent 配一个网页聊天界面：加一个 API 路由把 agent 的输出转成 AI SDK 的消息流，前端用 useChat 消费。",
     install: {
       command: "pnpm add @mastra/ai-sdk@latest @ai-sdk/react ai",
       description: "在 my-mastra-app 目录执行 —— 把 agent 的输出转成 AI SDK 的消息流，页面才接得上。",
@@ -917,38 +917,36 @@ export const supportAgent = new Agent({
       "toAISdkMessages — 把 memory 里的消息转成 AI SDK 的 UIMessage，刷新页面时喂给 useChat",
       "getMemory / recall — 从 agent 拿到 memory，按对话 id + 客户 id 读回历史消息",
       "version — handleChatStream 与 toAISdkMessages 要和你装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）",
+      "前端怎么接 — AI SDK 的 useChat：用 DefaultChatTransport 指定 api（/api/generate）和 body（chatId），POST 发消息、GET 水合历史、DELETE 清空；后端换成 Mastra 后这套协议不用改",
     ],
     docLinks: [
+      { title: "Vercel AI SDK 官网", href: "https://ai-sdk.dev" },
       {
-        title: "Next.js 集成",
-        href: "https://mastra.ai/guides/getting-started/next-js",
+        title: "Mastra 侧的 AI SDK 参考",
+        href: "https://mastra.ai/reference/ai-sdk/overview",
       },
       {
-        title: "AI SDK UI",
-        href: "https://mastra.ai/integrations/agentic-ui/ai-sdk-ui",
+        title: "handleChatStream() 参考",
+        href: "https://mastra.ai/reference/ai-sdk/handle-chat-stream",
       },
       { title: "recall 参考", href: "https://mastra.ai/reference/memory/recall" },
       {
         title: "useChat",
         href: "https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat",
       },
-          {
-        title: "toAISdkStream（消息转换）",
-        href: "https://mastra.ai/reference/ai-sdk/to-ai-sdk-stream",
-      },
-],
+    ],
     files: [
       {
         path: "app/api/generate/route.ts",
         order: 1,
         action: "create",
-        hint: "路径用 /api/generate，和 lab-ai-sdk 第 4 课页面里写死的地址一致 —— 把那份 app/page.tsx 整份复制过来覆盖本项目的，一行都不用改。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
+        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
         code: `import { handleChatStream } from "@mastra/ai-sdk";
 import { toAISdkMessages } from "@mastra/ai-sdk/ui";
 import { createUIMessageStreamResponse } from "ai";
 import { NextResponse } from "next/server";
-// app/ 在项目根目录，Mastra 在 src/mastra/，所以用相对路径
-import { mastra } from "../../../src/mastra";
+// 用项目根配好的 @/* 别名导入，别写 ../../../ 这种相对路径
+import { mastra } from "@/src/mastra";
 
 // 当前用户：多用户/多端时换成一个真实用户 id，就是记忆的隔离边界
 const RESOURCE_ID = "web-user";
@@ -1008,13 +1006,179 @@ export async function DELETE(req: Request) {
         path: "src/mastra/index.ts",
         order: 2,
         action: "edit",
-        hint: "只改 storage 里的一行：next dev 和 mastra dev 的工作目录不同，相对路径会各建一个库文件，Studio 和页面看到的就不是同一份数据（把路径换成你机器上的实际路径）",
+        hint: "只改 storage 里的一行：把数据库路径从相对路径换成绝对路径 —— 否则 Studio 和网页各建一份库，两边数据互不相通",
         code: `// 改动前
 url: process.env.TURSO_DATABASE_URL ?? "file:./mastra.db",
 
-// 改动后（绝对路径）
-url: process.env.TURSO_DATABASE_URL ?? "file:/absolute/path/to/my-mastra-app/mastra.db",
+// 这一行管什么：memory 的消息、工作记忆、向量都写在这个 libSQL 文件里
+// 为什么要改：file:./xxx 是相对「进程的工作目录」，而两个进程的工作目录不一样
+//           实测：mastra dev 会把库建到 src/mastra/public/mastra.db，不是项目根
+// 不改会怎样：Studio 和网页各读写一份库 —— 在 Studio 里聊的记录，网页上根本看不到
+
+// 改动后（换成你机器上的绝对路径）
+url: process.env.TURSO_DATABASE_URL ?? "file:/Users/you/my-mastra-app/mastra.db",
+
+// 怎么验证改对了：两个进程都跑起来后，项目里只该存在这一份 mastra.db；
+// 在 Studio 里聊一句，刷新网页也能看到（反过来也一样）
 `,
+      },
+      {
+        path: "app/page.tsx",
+        order: 3,
+        action: "create",
+        hint: "前端页面：useChat + DefaultChatTransport 消费 /api/generate，含刷新水合（GET）与清空对话（DELETE）",
+        code: `"use client";
+
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
+import { useEffect, useState } from "react";
+
+const CHAT_ID = "default";
+
+export default function Home() {
+  const { messages, setMessages, sendMessage, status, stop, error } = useChat({
+    id: CHAT_ID,
+    transport: new DefaultChatTransport({
+      api: "/api/generate",
+      body: { chatId: CHAT_ID },
+      fetch: async (input, init) => {
+        const res = await fetch(input, init);
+        if (res.status === 503) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            typeof data.error === "string" ? data.error : "请先完成初始化",
+          );
+        }
+        return res;
+      },
+    }),
+  });
+  const [input, setInput] = useState("");
+  const loading = status === "streaming" || status === "submitted";
+
+  useEffect(() => {
+    fetch(\`/api/generate?chatId=\${CHAT_ID}\`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data.messages) && data.messages.length > 0) {
+          setMessages(data.messages);
+        }
+      })
+      .catch(() => {});
+  }, [setMessages]);
+
+  // 清空记录：服务端删掉存档，本地消息也清掉，界面立刻变空
+  async function handleClear() {
+    await fetch("/api/generate?chatId=" + CHAT_ID, { method: "DELETE" });
+    setMessages([]);
+  }
+
+  return (
+    <div className="flex flex-1 flex-col items-center px-4 py-8 font-sans">
+      <main className="flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4">
+        <header className="flex shrink-0 items-start justify-between gap-4">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">多轮对话</h1>
+            <p className="text-sm text-zinc-500">
+              连续聊天；消息保存在服务端 .chats/，刷新后自动恢复。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={messages.length === 0 || loading}
+            className="shrink-0 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            清空记录
+          </button>
+        </header>
+
+        <div className="min-h-[240px] flex-1 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4">
+          {messages.length === 0 ? (
+            <p className="text-sm text-zinc-400">发送第一条消息开始对话</p>
+          ) : (
+            <ul className="space-y-4">
+              {messages.map((message) => (
+                <li
+                  key={message.id}
+                  className={
+                    message.role === "user" ? "flex justify-end" : "flex justify-start"
+                  }
+                >
+                  <div
+                    className={
+                      message.role === "user"
+                        ? "max-w-[85%] rounded-lg bg-zinc-900 px-3 py-2 text-sm leading-6 text-white"
+                        : "max-w-[85%] rounded-lg bg-zinc-100 px-3 py-2 text-sm leading-6 text-zinc-900"
+                    }
+                  >
+                    {message.parts.map((part, index) =>
+                      part.type === "text" ? (
+                        <span key={index} className="whitespace-pre-wrap">
+                          {part.text}
+                        </span>
+                      ) : null,
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {error && (
+          <p className="shrink-0 text-sm text-red-600">{error.message}</p>
+        )}
+
+        <form
+          className="shrink-0 space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!input.trim() || loading) return;
+            sendMessage({ text: input.trim() });
+            setInput("");
+          }}
+        >
+          <label className="block text-sm font-medium">
+            消息
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              rows={2}
+              placeholder="输入消息…"
+              className="mt-1 w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {loading ? "回复中…" : "发送"}
+            </button>
+            {loading && (
+              <button
+                type="button"
+                onClick={() => stop()}
+                className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              >
+                停止
+              </button>
+            )}
+          </div>
+        </form>
+      </main>
+    </div>
+  );
+}`,
       },
     ],
   },

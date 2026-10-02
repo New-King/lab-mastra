@@ -34,7 +34,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 ## 四、前端不重学
 
-本课程的 Web UI **沿用 lab-ai-sdk**（`useChat`、`message.parts`、`tool-*` / `data-*` part 渲染）。本课程知识点只讲 Mastra 侧；讲前端时用一句话指回 lab-ai-sdk，不重复展开。目的是让学员看到「同一个前端，后端换成 Mastra」。
+本课程的 Web UI 用 **AI SDK 的 UI 端**（`useChat`、`message.parts`、`tool-*` / `data-*` part 渲染）。**课页里不要出现别的课程 / 仓库的名字**：需要复用现成页面就直接整份放进本课的文件列表，按官方口径讲「前端用 AI SDK 怎么接」（`useChat` + `DefaultChatTransport` + POST / GET / DELETE 三条动作）。代码来源只写在 `AGENTS.md` / `README.md` 这类维护文档里，不写进课页。
 
 ## 五、覆盖式演进（学员项目）
 
@@ -68,6 +68,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 - **跟做步骤的文案照 `lab-ai-sdk` 的写法**：一句话、动词开头、只说做什么；`choices` 用「项 → 取值」。理由、取舍、背景**不写进步骤说明**（放知识点、延伸阅读或仓库文档）。
 - 课的 `agentPrompt` 必须**显式给出项目路径占位符**（如 `[路径名]`），并要求 agent 在位置不明确时先问用户 —— 不能依赖 agent 的当前工作目录（它可能正是课程站点仓库，会把项目建进去）。
 - 工具必须用 `createTool()`（不要用裸对象），`execute` 签名是 `execute(input, context)`。
+- **导入用项目根的 `@/*` 别名**（`create-next-app` 默认就配了）：课里不要出现 `../../../src/mastra` 这类多级相对路径；同理不要传 `create-next-app` 不存在的参数（实测只有 `--react-compiler` / `--import-alias <prefix/*>` 这类正向开关）。
 - **工具按「客户会怎么说」设计，不按数据表结构设计**：定工具前先列**台词清单**（客户可能说的每句话），逐句确认至少有一个工具能接住；接不住就是缺工具。反例：只有 `checkReturnEligibility({ orderId })` 时，「我的刀能退吗」只能被推回「请提供订单号」——补上 `findOrders({ sku? })` 才成立。
 - **检索与判定分开**：查的归查（`listProducts` / `findOrders`），判的归判（`checkReturnEligibility`），模型才分得清「该查还是该判」。工具名用直白的能力词（「查在售清单」「查订单」），不用「按称呼查」这类实现细节措辞。提示词里只需再补两句：**能用工具解决的，优先用工具，不要麻烦客户**；以及**当前客户是谁**（「您当前正在服务的客户是罗峰先生」）—— 写明了模型就不会去问名字。
 - **提示词只点名工具**：`instructions` 里一行一个工具（「`findOrders`：查订单」）就够；政策细节、判定规则、问题类型映射都写在工具的 `description` 里（模型能读到）。规则抄进提示词，只会和代码两处打架。
@@ -78,7 +79,8 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 
 - 只挂 **Mastra 官方文档**（`https://mastra.ai/docs/...`），一课 3~5 条，与当课能力一一对应。
 - 每次改动后**批量校验 HTTP 200**（Mastra 文档路径变动频繁）。
-- AI SDK 的文档只在「接入前端」一课挂 1 条（`@ai-sdk/react` 的 useChat 参考）。
+- 找页面别靠猜路径：先查官方索引 `https://mastra.ai/llms.txt`（随包也有一份 `reference.md`，逐条列了页面标题与 URL，如 `handleChatStream()` → `/reference/ai-sdk/handle-chat-stream`）。
+- AI SDK 官方文档只在「接入前端」一课出现：官网 `https://ai-sdk.dev`（放最上）+ `useChat` 参考各 1 条，其余一律挂 Mastra 官方页面。
 
 ## 八、版本与时效
 
@@ -93,7 +95,7 @@ Mastra 迭代快，API 变动频繁：
 1. 动笔前是否已核对官方文档？文档与实际不一致处是否已问过用户？
 2. 该课代码在学员项目里能**跑通**（Studio 里能看到效果），并有可验证的「验收标准」。
 3. 新增 API / 概念是否已写进该课知识点，并挂上对应官方文档？
-4. 是否与 lab-ai-sdk 的 UI 结构一致（组件、布局 class、数据文件形状）？
+4. 是否与 lab-ai-sdk 的 UI 结构一致（组件、布局 class、数据文件形状）？**课页里有没有冒出别的课程的名字？**
 5. `docLinks` 是否全部 200？
 6. 是否误引了其他 provider / 云服务 / AI SDK 包？
 7. 新增工具前是否列过台词清单、逐句确认有动作能接住（含「客户不记得订单号」这类常态）？

@@ -72,7 +72,7 @@ pnpm dev          # 站点
 - [ ] **第 4 课待实测**：Studio 里工作记忆（`updateWorkingMemory`）是否总能写入
 - [x] **第 5 课嵌入模型已定**（2026-10-02）：走**云**——硅基流动 `BAAI/bge-large-zh-v1.5`（1024 维，中文），依赖 `@ai-sdk/openai-compatible@^2`（**2.x，3.x 的规范 Mastra 不吃**）。本地 `@mastra/fastembed` 已弃用（默认英文模型 + 要能访问 HuggingFace）
 - [ ] **第 6 课待实测**：`version: "v7"` 是否与安装的 `ai` 大版本一致；`chatId` 透传进 `handleChatStream` 的 `params` 是否被接受；`memory.deleteThread(threadId)`（签名已核对，未实跑）
-- [ ] **验参数写法**：第 1 课命令里的 `--no-react-compiler` / `--no-import-alias` 没出现在 `create-next-app --help` 里（只有正向的 `--react-compiler`、`--import-alias <prefix/*>`），可能报 `unknown option`；若如此，页面与提示词一起改
+- [x] **CLI 参数已核实**（2026-10-02 实跑 `create-next-app --help`）：**不存在** `--no-react-compiler` / `--no-import-alias`，只有正向的 `--react-compiler` 和 `--import-alias <prefix/*>`（默认 `@/*`）。第 1 课命令已改成显式 `--import-alias "@/*"`；第 6 课的 route 改用 `@/src/mastra` 别名导入，不再写 `../../../`
 - [x] `mastra init` 的参数已录（2026-09-30 / 10-01，`mastra@1.31.4`）：**`--default` 是确定性路径**（硬编码 `components: [agents, tools, workflows]` + `addExample: true` + `src/` + OpenAI），实测生成 `weather-agent`；**只带 `--llm` 等部分参数则不会生成示例**；官方 `reference/cli/mastra` 的 `init` 一节无提问清单
 - [ ] **待验证**：`pnpm exec mastra dev`（4111）与 `pnpm dev`（3000）在同一项目里并行运行
 - [ ] **课里要说明**：`mastra init` 走**交互式**时会改写项目根 `AGENTS.md` / `CLAUDE.md` 并写入 `.agents/`、`skills-lock.json`（走 `--default` 则跳过）；API Key 留空时只写 `.env.example`、**不动 `.env`**；且**不往 `package.json` 加脚本**
