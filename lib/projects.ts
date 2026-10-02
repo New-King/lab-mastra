@@ -33,6 +33,14 @@ export type ProjectVerify = {
 
 export type LabOperation =
   | {
+      kind: "deps";
+      id: "deps";
+      order: number;
+      label: string;
+      description: string;
+      command: string;
+    }
+  | {
       kind: "scaffold";
       id: "scaffold";
       order: number;
@@ -85,6 +93,7 @@ export function buildScaffoldCommand(files: ProjectFile[]): string | null {
 export function getLabOperations(
   files: ProjectFile[],
   verify?: ProjectVerify,
+  install?: LabProject["install"],
 ): LabOperation[] {
   const sorted = [...files]
     .filter((file) => file.order != null && file.action != null)
@@ -92,6 +101,20 @@ export function getLabOperations(
 
   const operations: LabOperation[] = [];
   let order = 1;
+
+  // 需要新装依赖的课：第一步就是装包，别让它藏在文件说明里
+  if (install) {
+    operations.push({
+      kind: "deps",
+      id: "deps",
+      order: order++,
+      label: "装依赖",
+      description:
+        install.description ??
+        `在 ${PROJECT_DIR} 目录执行，安装本课新增的依赖。`,
+      command: install.command,
+    });
+  }
 
   const command = buildScaffoldCommand(sorted);
   if (command) {
@@ -157,6 +180,11 @@ export type LabProject = {
   /** 左侧菜单用：短标题，不带冒号后的说明 */
   menuTitle: string;
   summary: string;
+  /** 可选：本课新增的依赖，会渲染成操作列表的第一步 */
+  install?: {
+    command: string;
+    description?: string;
+  };
   /** 可选：课末验收步骤（操作列表的最后一项） */
   verify?: ProjectVerify;
   concepts: string[];
@@ -267,7 +295,11 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
         title: "DeepSeek Provider",
         href: "https://mastra.ai/models/providers/deepseek",
       },
-    ],
+          {
+        title: "CLI 参考（mastra init）",
+        href: "https://mastra.ai/reference/cli/mastra",
+      },
+],
     files: [
       {
         path: "终端",
@@ -396,7 +428,11 @@ agents: { weatherAgent, supportAgent },
         title: "Request Context",
         href: "https://mastra.ai/docs/server/request-context",
       },
-    ],
+          {
+        title: "createTool 参考",
+        href: "https://mastra.ai/reference/tools/create-tool",
+      },
+],
     files: [
       {
         path: "src/mastra/data/products.ts",
@@ -530,6 +566,18 @@ import { z } from "zod";
 import { orders } from "../data/orders";
 import { products } from "../data/products";
 
+// outputSchema：返回值也约束住，后面拿到的是结构化数据
+const outputSchema = z.object({
+  orderId: z.string(),
+  sku: z.string(),
+  daysSinceDelivery: z.number().optional(),
+  decision: z.enum(["refund", "exchange", "repair", "reject", "pending"]),
+  reason: z.string(),
+});
+
+// 判定结果的类型：execute 显式声明返回它，否则字面量会被放宽成 string、跟 schema 对不上
+type Verdict = z.infer<typeof outputSchema>;
+
 // 工具必须用 createTool 定义（用裸对象写不会被执行）
 export const checkReturnEligibility = createTool({
   id: "check-return-eligibility",
@@ -543,16 +591,9 @@ export const checkReturnEligibility = createTool({
       .default("quality")
       .describe("问题类型：unopened 未拆封、quality 坏了 / 故障、other 其他；客户说「坏了」就按 quality"),
   }),
-  // outputSchema：返回值也约束住，后面拿到的是结构化数据
-  outputSchema: z.object({
-    orderId: z.string(),
-    sku: z.string(),
-    daysSinceDelivery: z.number().optional(),
-    decision: z.enum(["refund", "exchange", "repair", "reject", "pending"]),
-    reason: z.string(),
-  }),
+  outputSchema,
   // execute 只有这一种签名：(input, context)；用不到上下文时可省略第二个参数
-  execute: async ({ orderId, issue }) => {
+  execute: async ({ orderId, issue }): Promise<Verdict> => {
     // 天数与条款是确定性的事，交给代码；模型只负责把客户的话归成 issue
     const matched = orders.find((item) => item.orderId === orderId);
     // 教学兜底：订单号没匹配上时，优先按客户说的商品挑示例订单，其次才退回第一条
@@ -701,7 +742,11 @@ export const supportAgent = new Agent({
       },
       { title: "Memory 总览", href: "https://mastra.ai/docs/memory/overview" },
       { title: "Storage", href: "https://mastra.ai/docs/storage" },
-    ],
+          {
+        title: "另一种记忆：Observational Memory",
+        href: "https://mastra.ai/docs/memory/observational-memory",
+      },
+],
     files: [
       {
         path: "src/mastra/agents/support-agent.ts",
@@ -757,28 +802,33 @@ export const supportAgent = new Agent({
     menuTitle: "语义召回",
     summary:
       "让 agent 记得更久：把历史向量化做语义召回，按 token 预算裁剪上下文，并用 thread / resource 两个 id 决定它记得谁、记得哪一段。",
+    install: {
+      command: "pnpm add @ai-sdk/openai-compatible@^2",
+      description: "在 my-mastra-app 目录执行 —— 嵌入模型走硅基流动的兼容端点：装它的 AI SDK provider，并把 SILICONFLOW_API_KEY 写进 .env。注意装 2.x（3.x 对应更新的 AI SDK 规范，Mastra 只认到 v3）。",
+    },
     verify: {
       label: "去 Studio 试召回",
       description: [
         "打开 http://localhost:4111/agents，选 support-agent",
-        "这是一个已启用语义召回的客服 agent，新建 thread 后仍可引用此前对话",
+        "这是一个已启用语义召回的客服 agent，在一条对话里说过的细节，换对话后仍能接得上",
       ],
     },
     concepts: [
-      "semanticRecall — 把历史消息向量化，按语义相似度找回旧消息：换了对话也捞得回来（默认关闭，开启要 vector + embedder）",
-      "vector — 存这些向量的库：LibSQLVector 直接存本地文件",
-      "embedder — 把文字变成向量的模型；DeepSeek 没有，所以用本地的 @mastra/fastembed（不需要额外 API Key）",
+      "semanticRecall — 把历史消息向量化，按语义相似度找回旧消息；开了之后每轮都要检索一次（说「你好」也一样），换了对话也捞得回来（默认关闭，开启要 vector + embedder）",
+      "vector — 存这些向量的库：LibSQLVector 直接写本地文件（跟消息同一个 mastra.db）",
+      "embedder — 把文字变成向量的模型：用云的（如硅基流动 BAAI/bge-large-zh-v1.5）或本地的 @mastra/fastembed；换模型会换维度，旧向量作废",
       "messageHistory.maxTokens — 按 token 预算裁掉太旧的历史；lastMessages 管条数，两个都写就是条数 + 预算双重上限",
-      "scope — 记忆的作用范围：resource（默认）＝同一客户的所有对话共享，thread＝只在本对话内；resource 是客户、thread 是一条对话，工作记忆和语义召回都用这个开关",
+      "可调项 — topK（召回几条）、messageRange（每条命中前后各带几条）、scope（resource＝客户/跨对话，thread＝单条对话）；命中的旧消息每轮都会进上下文，模型可能主动提起旧事，介意就在提示词里约束或调小 topK",
     ],
     docLinks: [
       {
         title: "Semantic Recall",
         href: "https://mastra.ai/docs/memory/semantic-recall",
       },
+      { title: "嵌入模型（Embed）", href: "https://mastra.ai/reference/rag/embeddings" },
       {
-        title: "Multi-user Threads",
-        href: "https://mastra.ai/docs/memory/multi-user-threads",
+        title: "可换的向量库",
+        href: "https://mastra.ai/reference/rag/vector-databases",
       },
       { title: "Memory 类参考", href: "https://mastra.ai/reference/memory/memory-class" },
       { title: "LibSQL 向量库", href: "https://mastra.ai/reference/vectors/libsql" },
@@ -788,14 +838,21 @@ export const supportAgent = new Agent({
         path: "src/mastra/agents/support-agent.ts",
         order: 1,
         action: "replace",
-        hint: "先装依赖：pnpm add @mastra/fastembed。只改 memory 这一段，其余保持上一课的样子",
+        hint: "只改 memory 这一段（加 vector + embedder + 语义召回），其余保持上一课的样子",
         code: `import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { LibSQLVector } from "@mastra/libsql";
-import { fastembed } from "@mastra/fastembed";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 import { listProducts, findOrders } from "../tools/lookup-tool";
 import { checkReturnEligibility } from "../tools/return-tool";
+
+// 嵌入模型走硅基流动的 OpenAI 兼容端点：中文效果好，也不用在本地下载模型
+const siliconflow = createOpenAICompatible({
+  name: "siliconflow",
+  baseURL: "https://api.siliconflow.cn/v1",
+  apiKey: process.env.SILICONFLOW_API_KEY,
+});
 
 const customerProfile = z.object({
   sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
@@ -820,13 +877,13 @@ export const supportAgent = new Agent({
   memory: new Memory({
     // 向量和消息存同一个本地库文件
     vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
-    // 嵌入模型：fastembed 在本地跑，不需要额外的 API Key
-    embedder: fastembed,
+    // 嵌入模型：硅基流动的 bge-large-zh-v1.5（1024 维，中文）
+    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
     options: {
       // 条数上限 + token 预算，两个都写就是双重上限
       lastMessages: 20,
       messageHistory: { maxTokens: 8000 },
-      // 语义召回：跨会话找回相关的旧消息（resource 范围 = 同一个用户）
+      // 语义召回：跨对话捞回相关旧消息；topK 召回几条、messageRange 每条前后带几条、scope 跨不跨对话
       semanticRecall: { topK: 3, messageRange: 2, scope: "resource" },
       workingMemory: { enabled: true, schema: customerProfile },
     },
@@ -843,6 +900,10 @@ export const supportAgent = new Agent({
     menuTitle: "接入前端",
     summary:
       "换成 lab-ai-sdk 的前端：加一个 API 路由把 agent 的输出转成 AI SDK 的消息流，页面原样搬过来就能用。",
+    install: {
+      command: "pnpm add @mastra/ai-sdk@latest @ai-sdk/react ai",
+      description: "在 my-mastra-app 目录执行 —— 把 agent 的输出转成 AI SDK 的消息流，页面才接得上。",
+    },
     verify: {
       label: "打开页面验证",
       description: [
@@ -871,13 +932,17 @@ export const supportAgent = new Agent({
         title: "useChat",
         href: "https://ai-sdk.dev/docs/reference/ai-sdk-ui/use-chat",
       },
-    ],
+          {
+        title: "toAISdkStream（消息转换）",
+        href: "https://mastra.ai/reference/ai-sdk/to-ai-sdk-stream",
+      },
+],
     files: [
       {
         path: "app/api/generate/route.ts",
         order: 1,
         action: "create",
-        hint: "先装依赖：pnpm add @mastra/ai-sdk@latest @ai-sdk/react ai。路径用 /api/generate，和 lab-ai-sdk 第 4 课页面里写死的地址一致 —— 把那份 app/page.tsx 整份复制过来覆盖本项目的，一行都不用改。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
+        hint: "路径用 /api/generate，和 lab-ai-sdk 第 4 课页面里写死的地址一致 —— 把那份 app/page.tsx 整份复制过来覆盖本项目的，一行都不用改。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
         code: `import { handleChatStream } from "@mastra/ai-sdk";
 import { toAISdkMessages } from "@mastra/ai-sdk/ui";
 import { createUIMessageStreamResponse } from "ai";

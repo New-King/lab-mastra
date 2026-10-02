@@ -46,7 +46,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 | 2 | 会话记忆（`memory` + `lastMessages`） | `src/mastra/agents/*.ts` |
 | 3 | `src/mastra/data/*.ts` + `src/mastra/tools/*.ts` | agent |
 | 4 | — | agent 的 memory（加 `workingMemory` + schema） |
-| 5 | 依赖 `@mastra/fastembed`（本地嵌入） | agent 的 memory（`semanticRecall` + `vector` + `messageHistory` 预算） |
+| 5 | 依赖 `@ai-sdk/openai-compatible@^2`（嵌入走硅基流动） | agent 的 memory（`semanticRecall` + `vector` + `messageHistory` 预算） |
 | 6 | `app/api/generate/route.ts`（`handleChatStream`）+ 复用 lab-ai-sdk 第 4 课的 `app/page.tsx`；首次装 `@mastra/ai-sdk` / `@ai-sdk/react` / `ai` | 覆盖脚手架 `app/page.tsx`；`index.ts` 的 storage `url` 改绝对路径 |
 | 7–9 | `src/mastra/workflows/*.ts` | agent / `index.ts` |
 | 10 | `src/mastra/knowledge/*.ts` | 检索工具注册 |
@@ -62,7 +62,8 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 - **数据一律 mock**：订单、客户、物流都在 `src/mastra/data/` 里，**不接任何真实平台接口、不出现真实品牌名**；学员不需要任何商家凭证就能跑通全部 14 课。这份数据是**一份共享 mock**（没有登录、没有归属校验，谁查都是同一份）——工具入参里的客户姓名只是**筛选条件**，不是权限边界；不要往课里写「某客户名下的订单」这种生产系统的归属 / 隔离概念。
 - 模型统一 **DeepSeek**：`model: "deepseek/deepseek-flash"` + `DEEPSEEK_API_KEY`；不要为了示例引入其他 provider（要讲多模型/fallback 时单独说明可选 provider）。
 - 存储用**本地 libSQL**（`file:./mastra.db`），不要默认上云服务（Turso 只在「部署」课作为可选说明）。
-- 依赖只加课程真需要的包：`@mastra/core`、`@mastra/ai-sdk`、`zod`。第 5 课为语义召回加 `@mastra/fastembed`（本地嵌入，避免引入第二个 provider 的 key）；第 6 课接 lab-ai-sdk 前端时才装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装官方 Next.js 指南里推荐的 `ai-elements`**（前端用我们自己的）。
+- **新增依赖要写成一步**：需要装包的课在课数据里写 `install: { command, description }`，它会渲染成操作列表第一步「装依赖」；不要只在文件 `hint` 里带一句命令 —— 学员会漏掉（第 5 课 `@ai-sdk/openai-compatible`、第 6 课 `@mastra/ai-sdk` 都这么处理）。
+- 依赖只加课程真需要的包：`@mastra/core`、`@mastra/ai-sdk`、`zod`。第 5 课为语义召回加 `@ai-sdk/openai-compatible@^2`（嵌入走云：硅基流动 `BAAI/bge-large-zh-v1.5`；对话模型仍统一 DeepSeek，只是 DeepSeek 没有嵌入模型）；第 6 课接 lab-ai-sdk 前端时才装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装官方 Next.js 指南里推荐的 `ai-elements`**（前端用我们自己的）。
 - 示例代码写**中文注释**讲关键行为；知识点列表只列名称，注释解释用法。
 - **跟做步骤的文案照 `lab-ai-sdk` 的写法**：一句话、动词开头、只说做什么；`choices` 用「项 → 取值」。理由、取舍、背景**不写进步骤说明**（放知识点、延伸阅读或仓库文档）。
 - 课的 `agentPrompt` 必须**显式给出项目路径占位符**（如 `[路径名]`），并要求 agent 在位置不明确时先问用户 —— 不能依赖 agent 的当前工作目录（它可能正是课程站点仓库，会把项目建进去）。

@@ -124,13 +124,18 @@
 
 ### 第 5 课 · 语义召回
 
-- **目标**：开 `semanticRecall`（需 `vector` + `embedder`）、用 `messageHistory.maxTokens` 按 token 预算裁剪、用 `thread` / `resource` 区分会话与用户
-- **依赖（新增，**已按推荐实现，等用户确认**）**：`pnpm add @mastra/fastembed` —— DeepSeek 没有嵌入模型，`fastembed` 本地跑、不需要额外 key；另一条路是 `ModelRouterEmbeddingModel("openai/…")`（要 OpenAI / Google 的 key）
-- **依据**：官方 `docs/memory/semantic-recall`（`storage` 与 `vector` 分开传，省略时默认 LibSQL）；官方 `docs/memory/message-history` 原文「Setting `messageHistory` without `lastMessages` disables the default 10-message cap. Set both to combine a count cap with a token budget.」
+- **目标**：开 `semanticRecall`（需 `vector` + `embedder`）、用 `messageHistory.maxTokens` 按 token 预算裁剪、用 `scope`（`thread` / `resource`）决定跨不跨对话
+- **依赖（2026-10-02 实测跑通）**：`pnpm add @ai-sdk/openai-compatible@^2` —— 嵌入模型走**云**（硅基流动，OpenAI 兼容端点 `https://api.siliconflow.cn/v1`，模型 `BAAI/bge-large-zh-v1.5`，1024 维）。**必须装 2.x**：3.x 面向更新的 AI SDK 规范（provider spec v4），Mastra 只认到 v3
+- **弃用路径**：本地 `@mastra/fastembed` —— 实测其默认模型是**英文**的（`bge-small-en-v1.5`），且首次要能访问 HuggingFace 下权重（国内网络会报「Failed to determine the embedder's output dimension」）；包也没导出中文小模型的入口
+- **依据**：官方 `docs/memory/semantic-recall`（`storage` 与 `vector` 分开传，省略时默认 LibSQL；官方示例本身就是接云嵌入 `ModelRouterEmbeddingModel("openai/text-embedding-3-small")`）；官方 `docs/memory/message-history` 原文「Setting `messageHistory` without `lastMessages` disables the default 10-message cap. Set both to combine a count cap with a token budget.」
 - **只改一个文件**：`src/mastra/agents/support-agent.ts`
 - **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）；Memory Processors（手动处理器与通用 Processors 一起放第 13 课）
-- **验收**：先聊「NX-1002 这台的金丝断裂」→ 新建 thread 问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
-- **待验证**：Studio 新建 thread 时 `resourceId` 是否不变（决定上面这条验收是否成立）；`fastembed` 首次运行会下载本地模型
+- **验收**：先聊「NX-1002 这台的金丝断裂」→ 新建对话问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
+- **实测结论（2026-10-02，Studio + 查库）**：
+  - 向量确实落库：表名 `memory_messages_1024`（**1024 就是嵌入模型的输出维度**），每条 `embedding` = 4096 字节 = 1024 个 float
+  - Studio 里 `resource_id` 固定为 `support-agent`（Studio 用 agent id 当 resource）→ 跨对话召回成立，原「待验证」结案
+  - **每轮都会检索一次**（发「你好」也一样）；跨对话命中的旧消息会作为 system 消息注入上下文，所以模型可能主动提起上次的事
+- **课里要讲的可调项**：`topK`（召回几条）、`messageRange`（每条命中前后各带几条）、`scope`（`resource` 跨对话 / `thread` 单条对话）；不想让它主动翻旧账 → 提示词里约束或调小 `topK`
 - **文档**：`/docs/memory/semantic-recall`、`/docs/memory/multi-user-threads`、`/reference/memory/memory-class`、`/reference/vectors/libsql`
 
 ### 第 6 课 · 接入前端：复用 lab-ai-sdk 的页面（AI SDK UI）

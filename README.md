@@ -40,8 +40,8 @@ lab-mastra/
         → app/（前端，根目录）+ src/mastra/（agent、工具、index.ts）
 第 2 课  新建 agents/support-agent.ts（虚拟宇宙公司客服：instructions + 模型 + 会话记忆）+ 注册进 index.ts
 第 3 课  新增 data/products.ts（在售清单）、data/orders.ts（mock 订单）、tools/lookup-tool.ts、tools/return-tool.ts + 覆盖 agent
-第 4 课  覆盖 agents/support-agent.ts（加工作记忆 customerProfile：跨 thread 认客户）
-第 5 课  覆盖 agents/support-agent.ts（semanticRecall + messageHistory 预算 + thread/resource）；新增依赖 @mastra/fastembed
+第 4 课  覆盖 agents/support-agent.ts（加工作记忆 customerProfile：跨对话记得这单办到哪）
+第 5 课  覆盖 agents/support-agent.ts（semanticRecall + messageHistory 预算 + scope）；新增依赖 @ai-sdk/openai-compatible@^2（嵌入走硅基流动）
 第 6 课  新增 app/api/generate/route.ts（handleChatStream）+ 复用 lab-ai-sdk 第 4 课的 app/page.tsx
 第 7~9 课 新增 workflows/*.ts（售后流程 / 审批挂起 / 定时跟进）+ 覆盖 agent/index
 第 10 课 新增 knowledge/（售后政策 P1–P5 入库 + 检索工具）
@@ -68,8 +68,9 @@ pnpm dev          # 站点
 
 - [x] Studio 在 Next 一体化项目里可起：`pnpm exec mastra dev` → `http://localhost:4111`（2026-10-01 实测，官方 Next.js 指南未提 Studio）
 - [x] **端点写法已定**（2026-10-01）：用官方 Next.js 指南的 `handleChatStream()` + `createUIMessageStreamResponse()`，路由放 `app/api/generate/route.ts`（与 lab-ai-sdk 页面里写死的地址一致）；AGENTS / README / 课表已统一
-- [ ] **第 4/5 课待实测**：Studio 里工作记忆能否写入；Studio 新建 thread 时 `resourceId` 是否不变（决定第 5 课「跨会话召回」验收能否成立）
-- [ ] **第 5 课依赖待确认**：为 `semanticRecall` 加 `@mastra/fastembed`（本地嵌入，无需额外 key）—— DeepSeek 没有嵌入模型；如改用 `ModelRouterEmbeddingModel("openai/…")` 则需 OpenAI / Google 的 key
+- [x] **第 5 课已实测**（2026-10-02）：Studio 里 `resource_id` 固定为 `support-agent`（跨对话召回成立）；向量落库在 `memory_messages_1024`（1024 维，对应 `BAAI/bge-large-zh-v1.5`）；每轮都会检索一次，跨对话命中会作为 system 消息注入
+- [ ] **第 4 课待实测**：Studio 里工作记忆（`updateWorkingMemory`）是否总能写入
+- [x] **第 5 课嵌入模型已定**（2026-10-02）：走**云**——硅基流动 `BAAI/bge-large-zh-v1.5`（1024 维，中文），依赖 `@ai-sdk/openai-compatible@^2`（**2.x，3.x 的规范 Mastra 不吃**）。本地 `@mastra/fastembed` 已弃用（默认英文模型 + 要能访问 HuggingFace）
 - [ ] **第 6 课待实测**：`version: "v7"` 是否与安装的 `ai` 大版本一致；`chatId` 透传进 `handleChatStream` 的 `params` 是否被接受；`memory.deleteThread(threadId)`（签名已核对，未实跑）
 - [ ] **验参数写法**：第 1 课命令里的 `--no-react-compiler` / `--no-import-alias` 没出现在 `create-next-app --help` 里（只有正向的 `--react-compiler`、`--import-alias <prefix/*>`），可能报 `unknown option`；若如此，页面与提示词一起改
 - [x] `mastra init` 的参数已录（2026-09-30 / 10-01，`mastra@1.31.4`）：**`--default` 是确定性路径**（硬编码 `components: [agents, tools, workflows]` + `addExample: true` + `src/` + OpenAI），实测生成 `weather-agent`；**只带 `--llm` 等部分参数则不会生成示例**；官方 `reference/cli/mastra` 的 `init` 一节无提问清单
