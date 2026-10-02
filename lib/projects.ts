@@ -340,10 +340,10 @@ export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
   // instructions 相当于系统提示：写清角色、职责和回答方式，agent 每轮都遵守
-  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
 - 在售商品只有四种：遁天梭、金丝网、S 级飞刀、生命之水；其它的一律不受理
 - 售后规则：P1 签收 7 天内未拆封可退；P2 签收 15 天内质量问题可换新；P3 一年保修期内可修复（耗材不适用）
-- 能用上面的清单和规则解决的，直接判，不要问客户
+- 能用上面的清单和规则解决的，直接判，不要麻烦客户
 - 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   // 模型写成 "provider/model" 字符串，Mastra 会自动读取 DEEPSEEK_API_KEY
   model: "deepseek/deepseek-flash",
@@ -656,11 +656,11 @@ import { checkReturnEligibility } from "../tools/return-tool";
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
 - listProducts：查在售商品与售后政策
 - findOrders：查订单（可按商品名筛）
 - checkReturnEligibility：判退换资格，不要自己推算天数
-- 能用工具解决的，优先用工具，不要问客户
+- 能用工具解决的，优先用工具，不要麻烦客户
 - 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
   model: "deepseek/deepseek-flash",
   // 把工具交给 agent，由模型决定什么时候调用
@@ -726,11 +726,11 @@ const customerProfile = z.object({
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
 - listProducts：查在售商品与售后政策
 - findOrders：查订单（可按商品名筛）
 - checkReturnEligibility：判退换资格，不要自己推算天数
-- 能用工具解决的，优先用工具，不要问客户
+- 能用工具解决的，优先用工具，不要麻烦客户
 - 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
 - 已经答复过的方案不要改口
 - 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
@@ -810,11 +810,11 @@ const customerProfile = z.object({
 export const supportAgent = new Agent({
   id: "support-agent",
   name: "虚拟宇宙公司客服",
-  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。
+  instructions: \`你是虚拟宇宙公司官方客服，负责武器、装备与药剂的退换、修复、运输。您当前正在服务的客户是罗峰先生
 - listProducts：查在售商品与售后政策
 - findOrders：查订单（可按商品名筛）
 - checkReturnEligibility：判退换资格，不要自己推算天数
-- 能用工具解决的，优先用工具，不要问客户
+- 能用工具解决的，优先用工具，不要麻烦客户
 - 客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来，之后不要重复问
 - 已经答复过的方案不要改口
 - 中文、简短、专业；政策外的处置一律说「需要主管确认」\`,
