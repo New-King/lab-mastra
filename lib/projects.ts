@@ -521,12 +521,18 @@ export const listProducts = createTool({
 });
 
 // 查订单：客户不记得订单号时用它 —— 不要让客户去背订单号
+// 商品名按「包含」匹配（去掉空格、忽略大小写），所以「刀」「飞刀」「S 级飞刀」都能命中同一件商品
+const normalizeSku = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+
 export const findOrders = createTool({
   id: "find-orders",
   description:
-    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。查到一条直接调 checkReturnEligibility 判定；多条说不清时才复述让客户确认",
+    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。商品名给关键字就行：「刀」能匹配到「S 级飞刀」；查到一条直接调 checkReturnEligibility 判定，多条说不清时才复述让客户确认",
   inputSchema: z.object({
-    sku: z.string().optional().describe("商品名，例如 生命之水；不确定就留空"),
+    sku: z
+      .string()
+      .optional()
+      .describe("商品名，可以是关键字，例如 刀 / 飞刀 / S 级飞刀；不确定就留空"),
   }),
   outputSchema: z.object({
     orders: z.array(
@@ -538,21 +544,32 @@ export const findOrders = createTool({
         logistics: z.string(),
       }),
     ),
+    hint: z.string().optional().describe("没匹配上时的提示（可用商品名有哪些）"),
   }),
-  execute: async ({ sku }) => ({
-    orders: orders
-      .filter(
-        (item) =>
-          (!sku || item.sku === sku),
-      )
-      .map((item) => ({
+  execute: async ({ sku }) => {
+    const keyword = sku ? normalizeSku(sku) : "";
+    const matched = orders.filter((item) => {
+      if (!keyword) return true;
+      const name = normalizeSku(item.sku);
+      return name.includes(keyword) || keyword.includes(name);
+    });
+
+    return {
+      orders: matched.map((item) => ({
         orderId: item.orderId,
         customer: item.customer,
         sku: item.sku,
         deliveredDaysAgo: item.deliveredDaysAgo,
         logistics: item.logistics,
       })),
-  }),
+      // 没匹配上时把在售商品报给它，免得它换着关键字一个个试
+      ...(keyword && matched.length === 0
+        ? {
+            hint: \`没有匹配「\${sku}」的订单；在售商品只有：\${[...new Set(orders.map((item) => item.sku))].join(" / ")}\`,
+          }
+        : {}),
+    };
+  },
 });
 `,
       },
