@@ -527,12 +527,9 @@ const normalizeSku = (value: string) => value.replace(/\s+/g, "").toLowerCase();
 export const findOrders = createTool({
   id: "find-orders",
   description:
-    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。商品名给关键字就行：「刀」能匹配到「S 级飞刀」；查到一条直接调 checkReturnEligibility 判定，多条说不清时才复述让客户确认",
+    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。查到一条直接调 checkReturnEligibility 判定；多条说不清时才复述让客户确认",
   inputSchema: z.object({
-    sku: z
-      .string()
-      .optional()
-      .describe("商品名，可以是关键字，例如 刀 / 飞刀 / S 级飞刀；不确定就留空"),
+    sku: z.string().optional().describe("商品名，例如 生命之水；不确定就留空"),
   }),
   outputSchema: z.object({
     orders: z.array(
