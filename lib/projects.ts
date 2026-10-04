@@ -568,7 +568,13 @@ export const findOrders = createTool({
     ),
     hint: z.string().optional().describe("没匹配上时的提示（可用商品名有哪些）"),
   }),
-  execute: async ({ sku }) => {
+  execute: async ({ sku }) => queryOrders({ sku }),
+});
+
+// 查订单的业务逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
+export function queryOrders(input: { sku?: string }) {
+  const { sku } = input;
+
     const keyword = sku ? normalizeSku(sku) : "";
     const matched = orders.filter((item) => {
       if (!keyword) return true;
@@ -591,8 +597,8 @@ export const findOrders = createTool({
           }
         : {}),
     };
-  },
-});
+}
+
 `,
       },
       {
@@ -632,7 +638,16 @@ export const checkReturnEligibility = createTool({
   }),
   outputSchema,
   // execute 只有这一种签名：(input, context)；用不到上下文时可省略第二个参数
-  execute: async ({ orderId, issue }): Promise<Verdict> => {
+  execute: async ({ orderId, issue }) => judgeReturn({ orderId, issue }),
+});
+
+// 判定逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
+export function judgeReturn(input: {
+  orderId: string;
+  issue: "unopened" | "quality" | "other";
+}): Verdict {
+  const { orderId, issue } = input;
+
     // 天数与条款是确定性的事，交给代码；模型只负责把客户的话归成 issue
     const matched = orders.find((item) => item.orderId === orderId);
     // 教学兜底：订单号没匹配上时，优先按客户说的商品挑示例订单，其次才退回第一条
@@ -719,8 +734,8 @@ export const checkReturnEligibility = createTool({
       decision: "reject",
       reason: note + "签收 " + days + " 天，已超出 P3 的一年保修期：只能付费修复",
     };
-  },
-});
+}
+
 `,
       },
       {
@@ -1591,7 +1606,7 @@ function SendButton({
       "createStep — 一个步骤 = 一件独立的小事（分类 / 查订单 / 判资格 / 写回复）：自己声明 inputSchema / outputSchema；执行时拿到上一步的产物 inputData，以及共享的 state 与 mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
       "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
-      "步骤里调 agent / 调工具 — mastra.getAgent(\"support-agent\") 拿 agent；工具直接 findOrders.execute(input, { requestContext })",
+      "步骤里调 agent / 调业务函数 — mastra.getAgent(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
     ],
     docLinks: [
       { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
@@ -1607,8 +1622,8 @@ function SendButton({
         hint: "把一次售后处理做成工作流（脚手架自带的 weather-workflow.ts 保持不动）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
-import { findOrders } from "../tools/lookup-tool";
-import { checkReturnEligibility } from "../tools/return-tool";
+import { queryOrders } from "../tools/lookup-tool";
+import { judgeReturn } from "../tools/return-tool";
 
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
@@ -1659,12 +1674,9 @@ const lookupOrder = createStep({
   }),
   outputSchema: z.object({ found: z.boolean() }),
   stateSchema,
-  execute: async ({ inputData, requestContext, setState }) => {
+  execute: async ({ inputData, setState }) => {
     if (inputData.intent !== "return") return { found: false };
-    const { orders } = await findOrders.execute(
-      { sku: inputData.sku },
-      { requestContext },
-    );
+    const { orders } = queryOrders({ sku: inputData.sku });
     if (orders.length !== 1) return { found: false };
     await setState({ orderId: orders[0].orderId });
     return { found: true };
@@ -1678,16 +1690,13 @@ const judge = createStep({
   inputSchema: z.object({ found: z.boolean() }),
   outputSchema: z.object({ decision: z.string(), reason: z.string() }),
   stateSchema,
-  execute: async ({ inputData, requestContext, state, setState }) => {
+  execute: async ({ inputData, state, setState }) => {
     if (!inputData.found || !state.orderId) {
       const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
       return { decision: "need-info", reason };
     }
-    const verdict = await checkReturnEligibility.execute(
-      { orderId: state.orderId, issue: "quality" },
-      { requestContext },
-    );
+    const verdict = judgeReturn({ orderId: state.orderId, issue: "quality" });
     await setState({ decision: verdict.decision, reason: verdict.reason });
     return { decision: verdict.decision, reason: verdict.reason };
   },
@@ -1775,8 +1784,8 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { orders } from "../data/orders";
-import { findOrders } from "../tools/lookup-tool";
-import { checkReturnEligibility } from "../tools/return-tool";
+import { queryOrders } from "../tools/lookup-tool";
+import { judgeReturn } from "../tools/return-tool";
 
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
@@ -1827,12 +1836,9 @@ const lookupOrder = createStep({
   }),
   outputSchema: z.object({ found: z.boolean() }),
   stateSchema,
-  execute: async ({ inputData, requestContext, setState }) => {
+  execute: async ({ inputData, setState }) => {
     if (inputData.intent !== "return") return { found: false };
-    const { orders } = await findOrders.execute(
-      { sku: inputData.sku },
-      { requestContext },
-    );
+    const { orders } = queryOrders({ sku: inputData.sku });
     if (orders.length !== 1) return { found: false };
     await setState({ orderId: orders[0].orderId });
     return { found: true };
@@ -1850,16 +1856,13 @@ const judge = createStep({
     needsApproval: z.boolean(),
   }),
   stateSchema,
-  execute: async ({ inputData, requestContext, state, setState }) => {
+  execute: async ({ inputData, state, setState }) => {
     if (!inputData.found || !state.orderId) {
       const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
       return { decision: "need-info", reason, needsApproval: false };
     }
-    const verdict = await checkReturnEligibility.execute(
-      { orderId: state.orderId, issue: "quality" },
-      { requestContext },
-    );
+    const verdict = judgeReturn({ orderId: state.orderId, issue: "quality" });
     // P4：客服可自主补偿 ≤ 50 黑龙币；超出的退款必须主管点头
     const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
     const needsApproval = verdict.decision === "refund" && price > 50;
