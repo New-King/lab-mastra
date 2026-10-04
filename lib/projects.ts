@@ -21,17 +21,15 @@ export type ProjectFile = {
 };
 
 /**
- * 局部修改（edit）的代码按「顶格注释」拆块：注释当小标题，后面的代码各自成块、各自可复制。
- * 例：`// ① 顶部加一行 import` / `// ② 在 new Mastra({ ... }) 里加一项`。
- * 只有一块时返回空数组，调用方照常整块渲染。
+ * 局部修改（edit）的代码按编号注释拆块：`// ① …`（顶格）当小标题，后面的代码各自成块、各自可复制。
+ * 只认 ①~⑩ 编号，所以代码里普通的说明注释不会被误切；只有一块时返回空数组，调用方整块渲染。
  */
 export function splitFileCode(code: string): { label: string; code: string }[] {
   const lines = code.split("\n");
   const blocks: { label: string; lines: string[] }[] = [];
 
   lines.forEach((line, index) => {
-    const isHeading =
-      /^\/\/\s*\S/.test(line) && (index === 0 || lines[index - 1].trim() === "");
+    const isHeading = /^\/\/\s*[①②③④⑤⑥⑦⑧⑨⑩]/.test(line);
     if (isHeading) {
       blocks.push({ label: line.replace(/^\/\/\s*/, "").trim(), lines: [] });
       return;
@@ -2470,13 +2468,13 @@ if (result.verdict !== "passed") {
         order: 1,
         action: "edit",
         hint: "观测是脚手架已经配好的：这里只改服务名与日志级别（别整体覆盖）",
-        code: `// 改动：日志名换成自己的项目，级别走环境变量
+        code: `// ① 日志名换成自己的项目，级别走环境变量
 logger: new PinoLogger({
   name: "my-mastra-app",
   level: process.env.LOG_LEVEL ?? "info",
 }),
 
-// 观测配置其余部分保持脚手架生成的样子（两个 exporter + SensitiveDataFilter）
+// ② 观测配置其余部分保持脚手架生成的样子（两个 exporter + SensitiveDataFilter）
 observability: new Observability({
   configs: {
     default: {
