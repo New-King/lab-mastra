@@ -13,6 +13,7 @@ import {
   getFileActionLabel,
   getLabOperations,
   getOrderLabel,
+  splitFileCode,
   type ConceptArticle,
   type LabOperation,
   type LabProject,
@@ -330,6 +331,8 @@ const OperationDetail = forwardRef<
   }
 
   const { file } = operation;
+  // 局部修改：按注释拆成多块，每块单独复制（不能整体覆盖的文件最容易抄错）
+  const blocks = file.action === "edit" ? splitFileCode(file.code ?? "") : [];
 
   return (
     <section ref={ref} className="flex min-h-0 min-w-0 w-full flex-col space-y-2">
@@ -344,7 +347,18 @@ const OperationDetail = forwardRef<
             .join(" · ")}
         </p>
       )}
-      <CodePanel key={file.path} code={file.code ?? ""} path={file.path} />
+      {blocks.length > 0 ? (
+        <div className="space-y-3">
+          {blocks.map((block, index) => (
+            <div key={index} className="space-y-1.5">
+              <p className="text-xs text-muted">{block.label}</p>
+              <CodePanel code={block.code} path={file.path} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <CodePanel key={file.path} code={file.code ?? ""} path={file.path} />
+      )}
     </section>
   );
 });

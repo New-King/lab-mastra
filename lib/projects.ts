@@ -20,6 +20,33 @@ export type ProjectFile = {
   action?: FileAction;
 };
 
+/**
+ * 局部修改（edit）的代码按「顶格注释」拆块：注释当小标题，后面的代码各自成块、各自可复制。
+ * 例：`// ① 顶部加一行 import` / `// ② 在 new Mastra({ ... }) 里加一项`。
+ * 只有一块时返回空数组，调用方照常整块渲染。
+ */
+export function splitFileCode(code: string): { label: string; code: string }[] {
+  const lines = code.split("\n");
+  const blocks: { label: string; lines: string[] }[] = [];
+
+  lines.forEach((line, index) => {
+    const isHeading =
+      /^\/\/\s*\S/.test(line) && (index === 0 || lines[index - 1].trim() === "");
+    if (isHeading) {
+      blocks.push({ label: line.replace(/^\/\/\s*/, "").trim(), lines: [] });
+      return;
+    }
+    if (blocks.length === 0) blocks.push({ label: "", lines: [] });
+    blocks[blocks.length - 1].lines.push(line);
+  });
+
+  const parts = blocks
+    .map((block) => ({ label: block.label, code: block.lines.join("\n").trim() }))
+    .filter((block) => block.code.length > 0);
+
+  return parts.length > 1 ? parts : [];
+}
+
 export type FollowStep = {
   description: string;
   command: string;
