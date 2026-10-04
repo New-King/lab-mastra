@@ -1703,9 +1703,9 @@ const reply = createStep({
   execute: async ({ inputData, state, mastra }) => {
     const agent = mastra?.getAgent("support-agent");
     const prompt =
-      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\n" +
-      "判定：" + inputData.decision + "\n依据：" + inputData.reason +
-      "\n当前状态：" + JSON.stringify(state);
+      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
+      "判定：" + inputData.decision + "\\n依据：" + inputData.reason +
+      "\\n当前状态：" + JSON.stringify(state);
     const res = await agent?.generate(prompt);
     return { answer: res?.text ?? inputData.reason };
   },
@@ -1901,9 +1901,9 @@ const reply = createStep({
   execute: async ({ inputData, state, mastra }) => {
     const agent = mastra?.getAgent("support-agent");
     const prompt =
-      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\n" +
-      "判定：" + inputData.decision + "\n依据：" + inputData.reason +
-      "\n当前状态：" + JSON.stringify(state);
+      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
+      "判定：" + inputData.decision + "\\n依据：" + inputData.reason +
+      "\\n当前状态：" + JSON.stringify(state);
     const res = await agent?.generate(prompt);
     return { answer: res?.text ?? inputData.reason };
   },
@@ -2202,7 +2202,7 @@ const ingest = createStep({
         strategy: "recursive",
         maxSize: 256,
         overlap: 32,
-        separators: ["\n"],
+        separators: ["\\n"],
       });
       for (const part of parts) {
         chunks.push(part.text);
