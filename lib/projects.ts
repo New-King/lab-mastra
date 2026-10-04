@@ -1578,12 +1578,12 @@ function SendButton({
     title: "工作流（一）：把售后处理做成流程",
     menuTitle: "工作流（一）",
     summary:
-      "把一次售后处理做成固定流程：分类 → 查订单 → 判资格 → 回复；哪一步出错、哪一步慢，在 Studio 里都看得到。",
+      "把一次售后处理做成固定流程：分类 → 查订单 → 判定 → 回复；退换、物流、其他咨询三类都能走通，哪一步出错、哪一步慢在 Studio 里都看得到。",
     verify: {
       label: "去 Studio 跑流程",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
-        "这是一个把售后处理串成流程的客服工作流：意图分类、查订单、判资格、生成回复按步执行，每步的输入输出都能查到",
+        "这是一个把售后处理串成流程的客服工作流：意图分类、查订单、判定、生成回复按步执行；退货走售后政策、物流回运输状态、咨询直接回答，每步的输入输出都能查到",
       ],
     },
     concepts: [
@@ -1591,6 +1591,7 @@ function SendButton({
       "createStep — 一个步骤 = 一件独立的小事（分类 / 查订单 / 判资格 / 写回复）：自己声明 inputSchema / outputSchema；执行时拿到上一步的产物 inputData，以及共享的 state 与 mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
       "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
+      "意图分流 — 同一个流程里按 intent 各走各的处理：退货走售后政策、物流回运输状态、咨询交给模型直接答；结论都写进 state，最后一步统一回复",
       "步骤里调 agent / 调业务函数 — mastra.getAgentById(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
     ],
     docLinks: [
@@ -1831,14 +1832,19 @@ export function judgeReturn(input: {
         hint: "把一次售后处理做成工作流（脚手架自带的 weather-workflow.ts 保持不动）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+import { orders } from "../data/orders";
 import { queryOrders } from "../tools/lookup-tool";
 import { judgeReturn } from "../tools/return-tool";
 
+const intentSchema = z.enum(["return", "logistics", "question"]);
+
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
-  intent: z.enum(["return", "logistics", "question"]).optional(),
+  message: z.string().optional(),
+  intent: intentSchema.optional(),
   sku: z.string().optional(),
   orderId: z.string().optional(),
+  logistics: z.string().optional(),
   decision: z.string().optional(),
   reason: z.string().optional(),
 });
@@ -1848,10 +1854,7 @@ const classify = createStep({
   id: "classify",
   description: "判断客户这句话属于退换、物流还是其他咨询",
   inputSchema: z.object({ message: z.string() }),
-  outputSchema: z.object({
-    intent: z.enum(["return", "logistics", "question"]),
-    sku: z.string().optional(),
-  }),
+  outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
     const agent = mastra?.getAgentById("support-agent");
@@ -1860,15 +1863,12 @@ const classify = createStep({
       "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
       {
         structuredOutput: {
-          schema: z.object({
-            intent: z.enum(["return", "logistics", "question"]),
-            sku: z.string().optional(),
-          }),
+          schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
         },
       },
     );
     const out = res.object ?? { intent: "question" as const };
-    await setState({ intent: out.intent, sku: out.sku });
+    await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
     return out;
   },
 });
@@ -1882,25 +1882,51 @@ const lookupOrder = createStep({
     intent: z.enum(["return", "logistics", "question"]),
     sku: z.string().optional(),
   }),
-  outputSchema: z.object({ found: z.boolean() }),
+  outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
   execute: async ({ inputData, setState }) => {
-    if (inputData.intent !== "return") return { found: false };
-    const { orders } = queryOrders({ sku: inputData.sku });
-    if (orders.length !== 1) return { found: false };
-    await setState({ orderId: orders[0].orderId });
-    return { found: true };
+    // 纯咨询不查订单；退货与物流都要查
+    if (inputData.intent === "question") {
+      return { intent: inputData.intent, found: false };
+    }
+    const { orders: matched } = queryOrders({ sku: inputData.sku });
+    if (matched.length !== 1) return { intent: inputData.intent, found: false };
+    const order = orders.find((item) => item.orderId === matched[0].orderId);
+    await setState({
+      orderId: matched[0].orderId,
+      // 物流信息也写进状态：物流类的问题要直接回它
+      logistics:
+        (order?.logistics ?? matched[0].logistics) +
+        (order?.logisticsStuckDays
+          ? "，已停留 " + order.logisticsStuckDays + " 天"
+          : ""),
+    });
+    return { intent: inputData.intent, found: true };
   },
 });
 
-// ③ 判资格：天数与条款都在工具里，模型不参与
+// ③ 判定：退货走售后政策、物流回运输状态、咨询留给回复
 const judge = createStep({
   id: "judge",
-  description: "按售后政策判定这一单能不能退 / 换 / 修",
-  inputSchema: z.object({ found: z.boolean() }),
+  description: "按意图给出结论：退货判退 / 换 / 修，物流回运输状态，咨询交给回复",
+  inputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   outputSchema: z.object({ decision: z.string(), reason: z.string() }),
   stateSchema,
   execute: async ({ inputData, state, setState }) => {
+    // 纯咨询：不用判定，让回复步骤直接答客户的问题
+    if (inputData.intent === "question") {
+      await setState({ decision: "answer", reason: "" });
+      return { decision: "answer", reason: "" };
+    }
+    // 物流：把状态里的物流信息整理成结论
+    if (inputData.intent === "logistics") {
+      const reason = state.orderId
+        ? "订单 " + state.orderId + "：" + (state.logistics ?? "暂无物流信息")
+        : "没查到对应订单，先跟客户确认是哪一件商品";
+      await setState({ decision: "logistics", reason });
+      return { decision: "logistics", reason };
+    }
+    // 退货：没查到订单就先补齐信息
     if (!inputData.found || !state.orderId) {
       const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
@@ -1912,21 +1938,24 @@ const judge = createStep({
   },
 });
 
-// ④ 回复：把状态里的事实交给模型组织成人话
+// ④ 回复：把状态里的事实交给模型组织成人话（咨询类由它直接答客户的问题）
 const reply = createStep({
   id: "reply",
   description: "用客户听得懂的话说明结果",
   inputSchema: z.object({ decision: z.string(), reason: z.string() }),
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
-  execute: async ({ inputData, state, mastra }) => {
+  execute: async ({ state, mastra }) => {
     const agent = mastra?.getAgentById("support-agent");
+    const question = state.message ?? "";
     const prompt =
-      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
-      "判定：" + inputData.decision + "\\n依据：" + inputData.reason +
-      "\\n当前状态：" + JSON.stringify(state);
+      state.decision === "answer"
+        ? "客户问：" + question + "。按虚拟宇宙公司客服的职责简短回答；不确定就说明要转人工，不要编。"
+        : "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
+          "判定：" + (state.decision ?? "") + "\\n依据：" + (state.reason ?? "") +
+          "\\n客户原话：" + question;
     const res = await agent?.generate(prompt);
-    return { answer: res?.text ?? inputData.reason };
+    return { answer: res?.text ?? state.reason ?? "" };
   },
 });
 
@@ -1997,11 +2026,15 @@ import { orders } from "../data/orders";
 import { queryOrders } from "../tools/lookup-tool";
 import { judgeReturn } from "../tools/return-tool";
 
+const intentSchema = z.enum(["return", "logistics", "question"]);
+
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
-  intent: z.enum(["return", "logistics", "question"]).optional(),
+  message: z.string().optional(),
+  intent: intentSchema.optional(),
   sku: z.string().optional(),
   orderId: z.string().optional(),
+  logistics: z.string().optional(),
   decision: z.string().optional(),
   reason: z.string().optional(),
 });
@@ -2011,10 +2044,7 @@ const classify = createStep({
   id: "classify",
   description: "判断客户这句话属于退换、物流还是其他咨询",
   inputSchema: z.object({ message: z.string() }),
-  outputSchema: z.object({
-    intent: z.enum(["return", "logistics", "question"]),
-    sku: z.string().optional(),
-  }),
+  outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
     const agent = mastra?.getAgentById("support-agent");
@@ -2023,15 +2053,12 @@ const classify = createStep({
       "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
       {
         structuredOutput: {
-          schema: z.object({
-            intent: z.enum(["return", "logistics", "question"]),
-            sku: z.string().optional(),
-          }),
+          schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
         },
       },
     );
     const out = res.object ?? { intent: "question" as const };
-    await setState({ intent: out.intent, sku: out.sku });
+    await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
     return out;
   },
 });
@@ -2045,22 +2072,34 @@ const lookupOrder = createStep({
     intent: z.enum(["return", "logistics", "question"]),
     sku: z.string().optional(),
   }),
-  outputSchema: z.object({ found: z.boolean() }),
+  outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
   execute: async ({ inputData, setState }) => {
-    if (inputData.intent !== "return") return { found: false };
-    const { orders } = queryOrders({ sku: inputData.sku });
-    if (orders.length !== 1) return { found: false };
-    await setState({ orderId: orders[0].orderId });
-    return { found: true };
+    // 纯咨询不查订单；退货与物流都要查
+    if (inputData.intent === "question") {
+      return { intent: inputData.intent, found: false };
+    }
+    const { orders: matched } = queryOrders({ sku: inputData.sku });
+    if (matched.length !== 1) return { intent: inputData.intent, found: false };
+    const order = orders.find((item) => item.orderId === matched[0].orderId);
+    await setState({
+      orderId: matched[0].orderId,
+      // 物流信息也写进状态：物流类的问题要直接回它
+      logistics:
+        (order?.logistics ?? matched[0].logistics) +
+        (order?.logisticsStuckDays
+          ? "，已停留 " + order.logisticsStuckDays + " 天"
+          : ""),
+    });
+    return { intent: inputData.intent, found: true };
   },
 });
 
-// ③ 判资格：天数与条款都在工具里，模型不参与
+// ③ 判定：退货走售后政策、物流回运输状态、咨询留给回复；同时标明要不要主管拍板
 const judge = createStep({
   id: "judge",
-  description: "按售后政策判定这一单能不能退 / 换 / 修，并标明要不要主管拍板",
-  inputSchema: z.object({ found: z.boolean() }),
+  description: "按意图给出结论，并标明要不要主管拍板",
+  inputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   outputSchema: z.object({
     decision: z.string(),
     reason: z.string(),
@@ -2068,6 +2107,20 @@ const judge = createStep({
   }),
   stateSchema,
   execute: async ({ inputData, state, setState }) => {
+    // 纯咨询：不用判定，也不用审批
+    if (inputData.intent === "question") {
+      await setState({ decision: "answer", reason: "" });
+      return { decision: "answer", reason: "", needsApproval: false };
+    }
+    // 物流：把状态里的物流信息整理成结论
+    if (inputData.intent === "logistics") {
+      const reason = state.orderId
+        ? "订单 " + state.orderId + "：" + (state.logistics ?? "暂无物流信息")
+        : "没查到对应订单，先跟客户确认是哪一件商品";
+      await setState({ decision: "logistics", reason });
+      return { decision: "logistics", reason, needsApproval: false };
+    }
+    // 退货：没查到订单就先补齐信息
     if (!inputData.found || !state.orderId) {
       const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
@@ -2147,10 +2200,13 @@ const reply = createStep({
   stateSchema,
   execute: async ({ state, mastra }) => {
     const agent = mastra?.getAgentById("support-agent");
+    const question = state.message ?? "";
     const prompt =
-      "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
-      "判定：" + (state.decision ?? "") + "\\n依据：" + (state.reason ?? "") +
-      "\\n当前状态：" + JSON.stringify(state);
+      state.decision === "answer"
+        ? "客户问：" + question + "。按虚拟宇宙公司客服的职责简短回答；不确定就说明要转人工，不要编。"
+        : "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
+          "判定：" + (state.decision ?? "") + "\\n依据：" + (state.reason ?? "") +
+          "\\n客户原话：" + question;
     const res = await agent?.generate(prompt);
     return { answer: res?.text ?? state.reason ?? "" };
   },
