@@ -1874,6 +1874,7 @@ const classify = createStep({
 });
 
 // ② 查订单：确定性的事交给工具，不让模型自己挑一单
+//    inputSchema 必须接住上一步的 output（intent + sku）—— 这两个字段这一步都真用到
 const lookupOrder = createStep({
   id: "lookup-order",
   description: "按商品名查订单，唯一命中就写进状态",
@@ -2036,6 +2037,7 @@ const classify = createStep({
 });
 
 // ② 查订单：确定性的事交给工具，不让模型自己挑一单
+//    inputSchema 必须接住上一步的 output（intent + sku）—— 这两个字段这一步都真用到
 const lookupOrder = createStep({
   id: "lookup-order",
   description: "按商品名查订单，唯一命中就写进状态",
