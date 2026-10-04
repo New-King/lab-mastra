@@ -186,6 +186,7 @@
 - **改动文件**：新建 `app/api/after-sales/route.ts`（POST 触发 / PATCH 恢复，两个请求）+ 新建 `app/after-sales/page.tsx`（客户消息 → 触发；`approval` 挂起出「批准 / 驳回」，缺信息挂起出候选与输入框）。`src/mastra/index.ts` 不用改
 - **验收**：`localhost:3000/after-sales` 输入「NX-1007 没拆封，我想退」→ 页面出审批按钮 → 点批准 → 出现回复，全程不开 Studio（已实测：触发/批准/驳回/补订单号四条路径都通）
 - **踩坑**：`getWorkflow()` 的参数是 `index.ts` 里 `workflows: { ... }` 的 **key**（我们这里是 `afterSalesWorkflow`），不是工作流的 `id`（`after-sales`）
+- **候选订单怎么给**：挂起时的 `candidates` 带上商品 / 金额 / 签收天数，页面渲染成可点的订单卡片（输入框只作兜底）；真实项目里候选应该先按登录身份（`resourceId`）过滤，而不是让客户背订单号
 - **原第 9 课内容（重试 / 定时 / 批量）去处**：不再单独成课，作为延伸阅读保留在课页右侧链接（Error Handling、Scheduled Workflows、Workers），素材留在 git 历史里（`d4c3f99` 之前那一版）
 - **文档（已核实 200）**：`/docs/workflows/overview`、`/docs/workflows/suspend-and-resume`、`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/deployment/workers`
 

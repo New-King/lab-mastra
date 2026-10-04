@@ -2067,6 +2067,7 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       "suspend — 步骤里 return await suspend({ ... }) 挂起本次运行，等外部带 resumeData 回来才继续往下走",
       "suspend 不只为审批 — 任何「这一步定不了」的等待都能挂起：缺信息等客户补（lookup-order）、超权限等主管批（approval）；同一个 run 里可以挂起多次，每次各自 resume",
       "resumeSchema / suspendSchema — 前者声明「恢复时要传什么」，后者声明「挂起时要给人看什么」",
+      "挂起内容也是产品数据 — suspendSchema 里给什么，前端才能渲染什么：只给订单号，客户就得去背号；带上商品 / 金额 / 签收天数，他才能一眼认出是哪一单",
       "run.resume({ step, resumeData }) — 从挂起点继续：step 可传步骤实例或 id；只传 resumeData 就恢复最近那个挂起点",
       "createRun({ runId }) — 拿 runId 把某次运行取回来再 resume，所以恢复可以发生在任意请求里（HTTP 路由、审批后台）",
       "snapshots / time travel — 每一步的状态都落库：进程重启后仍能从断点续跑；也能回放到某一步重跑，用来查「这一步为什么错」",
@@ -2151,9 +2152,19 @@ const lookupOrder = createStep({
   // 恢复时外部要传什么：客户补充的那句话（一般带着订单号）
   resumeSchema: z.object({ reply: z.string() }),
   // 挂起时把要给人看的信息一起存下来：问什么、候选有哪些
+  // 候选要带够客户判断的信息（商品 + 金额 + 签收天数）—— 否则他只能靠订单号，等于让他去背号
   suspendSchema: z.object({
     question: z.string(),
-    candidates: z.array(z.object({ orderId: z.string(), sku: z.string() })).optional(),
+    candidates: z
+      .array(
+        z.object({
+          orderId: z.string(),
+          sku: z.string(),
+          price: z.number(),
+          deliveredDaysAgo: z.number().nullable(),
+        }),
+      )
+      .optional(),
   }),
   execute: async ({ inputData, state, resumeData, suspend, setState }) => {
     // 纯咨询不查订单；退货与物流都要查
@@ -2172,11 +2183,16 @@ const lookupOrder = createStep({
       // 定不了唯一一单就别猜 —— 第一次先挂起，等客户补一句（resume 带着他的补充回来继续）
       if (!resumeData) {
         return await suspend({
-          question:
-            matched.length === 0
-              ? "没查到对应订单，请客户提供订单号（例如 NX-1007）"
-              : "同名商品有多单，请客户报一下订单号",
-          candidates: matched.map((item) => ({ orderId: item.orderId, sku: item.sku })),
+          question: matched.length === 0 ? "没查到对应订单" : "同名商品有多单，请确认是哪一单",
+          candidates: matched.map((item) => {
+            const order = orders.find((o) => o.orderId === item.orderId);
+            return {
+              orderId: item.orderId,
+              sku: item.sku,
+              price: order?.price ?? 0,
+              deliveredDaysAgo: order?.deliveredDaysAgo ?? null,
+            };
+          }),
         });
       }
       // 补充之后还是定不了：不再挂起，交给 judge 走 need-info
@@ -2361,6 +2377,7 @@ export async function approveRun(runId: string, approved: boolean) {
       "run.resume({ step, resumeData }) — 用 createRun({ runId }) 把那次运行取回来再恢复，所以恢复可以发生在另一个请求、另一个进程、甚至几天后",
       "runId 必须落库 — 挂起状态存在 storage 里（第 6 课那套），否则进程重启后找不到那次运行，就恢复不了",
       "「挂起时要展示什么」是数据，怎么渲染是前端 — suspendSchema 决定内容，页面自己决定出按钮还是输入框（Studio 里只能手填 JSON）",
+      "候选从哪来 — 真实项目里先用登录身份（resourceId）查这个客户的订单，候选天然就少；仍有多单就出订单卡片让他点，不要让客户背订单号",
       "生产的三个注意 — 接口要鉴权（别裸暴露给外网）、多实例别重复触发、长流程别在请求里同步等",
       "本课没展开的 — 重试与失败兜底（retryConfig / options.onError）、定时与批量（schedule / .foreach）见右侧文档，用得上再看",
     ],
@@ -2449,7 +2466,12 @@ type Ask = {
   question?: string;
   reason?: string;
   orderId?: string;
-  candidates?: { orderId: string; sku: string }[];
+  candidates?: {
+    orderId: string;
+    sku: string;
+    price: number;
+    deliveredDaysAgo: number | null;
+  }[];
 };
 
 type Outcome =
@@ -2559,30 +2581,39 @@ export default function AfterSalesPage() {
 
           {outcome.status === "suspended" && outcome.step !== "approval" && (
             <div className="space-y-3 rounded-2xl border border-zinc-200 p-4">
-              <p className="text-xs text-zinc-400">{outcome.ask.question}</p>
-              {outcome.ask.candidates && outcome.ask.candidates.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+              {/* 产品里这一步不该让客户背订单号：候选直接出卡片，点一下就走 */}
+              <p className="text-[15px] text-zinc-800">请问是哪一单？</p>
+              {outcome.ask.candidates && outcome.ask.candidates.length > 0 ? (
+                <div className="space-y-2">
                   {outcome.ask.candidates.map((item) => (
                     <button
                       key={item.orderId}
                       type="button"
-                      onClick={() => setReply(item.orderId)}
-                      className={\`rounded-xl px-3 py-1.5 text-[13px] ring-1 \${
-                        reply === item.orderId
-                          ? "bg-zinc-800 text-white ring-zinc-800"
-                          : "text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
-                      }\`}
+                      disabled={busy}
+                      onClick={() => resume({ reply: item.orderId })}
+                      className="flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-40"
                     >
-                      {item.orderId} · {item.sku}
+                      <span className="text-[15px] text-zinc-700">
+                        {item.sku} · {item.price} 黑龙币
+                      </span>
+                      <span className="text-xs text-zinc-400">
+                        {item.deliveredDaysAgo === null
+                          ? "未签收"
+                          : \`签收 \${item.deliveredDaysAgo} 天\`}{" "}
+                        · {item.orderId}
+                      </span>
                     </button>
                   ))}
                 </div>
+              ) : (
+                <p className="text-[13px] text-zinc-400">{outcome.ask.question}</p>
               )}
+              {/* 兜底：客户自己报了订单号（或说了别的线索）时走这里 */}
               <div className="flex gap-2">
                 <input
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="客户的补充，例如 NX-1007"
+                  placeholder="也可以直接说订单号，例如 NX-1007"
                   className="flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-[15px] text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
                 />
                 <button
