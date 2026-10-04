@@ -959,12 +959,11 @@ export const supportAgent = new Agent({
         path: "app/api/generate/route.ts",
         order: 1,
         action: "create",
-        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）。若页面打不开、报 \"@duckdb/node-bindings-<平台>\" 之类的 Module not found：说明你的项目是默认模板建的、自带 observability 的 DuckDB（原生模块、按平台分包，Next 打包器把每个平台的分支都当依赖找）—— 在 next.config.ts 加 serverExternalPackages: [\"@mastra/duckdb\", \"@duckdb/node-api\", \"@duckdb/node-bindings\"] 即可（课程脚手架用 --no-observability，正常不会有这一层）",
+        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
         code: `import { handleChatStream } from "@mastra/ai-sdk";
 import { toAISdkMessages } from "@mastra/ai-sdk/ui";
 import { createUIMessageStreamResponse } from "ai";
 import { NextResponse } from "next/server";
-// 用项目根配好的 @/* 别名导入，别写 ../../../ 这种相对路径
 import { mastra } from "@/src/mastra";
 
 // 当前用户：多用户/多端时换成一个真实用户 id，就是记忆的隔离边界
