@@ -60,7 +60,8 @@
 |---|---|---|
 | 接入前端（`handleChatStream()` + AI SDK UI，页面自己写） | 第 6 课 | 它只在 Studio 里验证；多数人要交付产品界面 |
 | Semantic Recall / Observational Memory / Memory Processors / 多用户线程隔离 | 第 5 课 | 它只用 thread Working Memory，没有长期记忆与跨会话召回 |
-| 定时 / 后台任务（Scheduled Workflows、Background Tasks、Schedules） | 第 9 课 | 模板自带 schedules，但阶段里没讲 |
+| 在应用里触发与恢复工作流（`createRun()` / `start()` / `resume()`） | 第 9 课 | 它只在 Studio 里跑；多数人要让自己的前端/后台来触发 |
+| 定时 / 后台任务（Scheduled Workflows、Background Tasks、Schedules） | 延伸阅读（第 9 课右侧链接） | 模板自带 schedules，但阶段里没讲 |
 | Guardrails 与 Processors | 第 13 课 | 它把注入防护放到阶段 9 的清单里，缺专门一课 |
 | Evals 的 CI / Datasets / Gates / Experiments | 第 11 课 | 它到"scorer + 固定案例"为止，没进 CI 门禁 |
 | Auth（Simple / JWT / FGA）与部署形态（Workflow Runners 等） | 第 14 课 | 它只在阶段 9 列了要求，没有具体实现路线 |

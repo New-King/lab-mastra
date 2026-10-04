@@ -14,18 +14,18 @@
 | | Processors | 第 13 课 |
 | | Code Mode | 进阶 A5 |
 | **Build / Workflows** | Workflow State | 第 7 课 |
-| | Control Flow | 第 7 课（`.then()`）、第 8 课（`.branch()`）、第 9 课（`.foreach()`） |
+| | Control Flow | 第 7 课（`.then()`）、第 8 课（`.branch()`） |
 | | Agents and Tools | 第 7 课 |
 | | Snapshots | 第 8 课 |
 | | Suspend and Resume | 第 8 课 |
 | | Human-in-the-Loop | 第 8 课 |
 | | Time Travel | 第 8 课 |
-| | Error Handling | 第 9 课 |
-| | Scheduled Workflows | 第 9 课 |
+| | Error Handling | 延伸阅读（第 9 课右侧链接） |
+| | Scheduled Workflows | 延伸阅读（第 9 课右侧链接） |
 | | Dynamic Workflows | 进阶 A5 |
 | **Build / Harness** | Durable Agents | 第 8 课（概念） |
-| | Background Tasks | 第 9 课 |
-| | Schedules | 第 9 课 |
+| | Background Tasks | 延伸阅读（第 9 课右侧链接） |
+| | Schedules | 延伸阅读（第 9 课右侧链接） |
 | | Goals / Signals / Signal Providers / Agent Controller | **不进主线**（见第二节） |
 | **Build / Memory** | Message History | 第 2 课（`lastMessages`）、第 5 课（`maxTokens` 预算） |
 | | Working Memory | 第 4 课 |
@@ -92,7 +92,8 @@
 |---|---|
 | **接入前端**（`handleChatStream()` + AI SDK UI，页面自己写：正文 / 思考 / 工具卡都渲染） | 第 6 课 |
 | Semantic Recall / `scope`（`thread` + `resource`） | 第 5 课 |
-| 定时任务与后台任务（Scheduled Workflows / Background Tasks / Schedules） | 第 9 课 |
+| 在应用里调用与恢复工作流（`createRun()` / `start()` / `resume()`、挂起结果读取、runId 要落库） | 第 9 课 |
+| 定时任务与后台任务（Scheduled Workflows / Background Tasks / Schedules） | 延伸阅读（第 9 课右侧链接） |
 | Guardrails 与 Processors（注入防护、输出脱敏） | 第 13 课 |
 | Evals 的 CI / Datasets / Gates / Experiments（它只到 scorer + trace） | 第 11 课 |
 | Auth（Simple / JWT / FGA）与部署形态（Workflow Runners 等） | 第 14 课 |

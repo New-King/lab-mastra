@@ -19,7 +19,7 @@
 | 6 | 接入前端：用 AI SDK UI 聊天 | `@mastra/ai-sdk` 的 `handleChatStream()` / `toAISdkMessages()`、Server、Client | **未覆盖（我们补）** | 页面自己写：正文 + 思考 + 工具调用都渲染 |
 | 7 | 工作流（一）：把问答变成流程 | Workflow State、Control Flow、Agents & Tools | 阶段 3 | 复用第 6 课页面 |
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
-| 9 | 工作流（三）：容错与定时 | Error Handling、Scheduled Workflows、Background Tasks、Schedules | 部分（模板有定时） | — |
+| 9 | 工作流（三）：接到你的应用 | `createRun()` / `start()` / `resume()`、挂起结果的读取 | 阶段 4 + 6 | 页面出按钮触发与恢复 |
 | 10 | RAG：知识库与检索 | 向量存储、检索工具、chunking / rerank | 阶段 8 | `data-*` part 显示来源 |
 | 11 | 评测：把回归测试跑起来 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
 | 12 | 观测：用 trace 定位问题 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
@@ -178,15 +178,16 @@
 - **待验证**：Studio 的 Workflows 页里挂起后能不能直接点恢复（界面行为未实测）；`createRun({ runId })` 跨进程恢复（runId 从库里取）是否正常
 - **文档（已核实 200）**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
 
-### 第 9 课 · 工作流（三）：容错与定时
+### 第 9 课 · 工作流（三）：接到你的应用
 
-- **目标**：步骤失败可重试 / 回滚；定时自动跑（日报、巡检）
-- **能力**：Error Handling、Scheduled Workflows、Control Flow（`.foreach()` 批量循环）、Harness（Background Tasks / Schedules）
-- **依据（2026-10-02 核对随包文档）**：工作流级 `retryConfig: { attempts, delay }`；步骤级 `createStep({ retries })` 覆盖前者；最终失败走 `options.onError(errorInfo)`（`error` / `status` / `steps`）。定时：在 `createWorkflow` 里写 `schedule: { cron, timezone, inputData }`，**Mastra 启动时自动接管**，不需要额外的注册调用；带 `schedule` 的工作流照样能手动 `start()`
-- **改动文件**：`after-sales.ts`（加重试与 onError）+ 新建 `daily-check.ts`（每天 9 点巡检：`scan` → `.foreach` 逐单生成提醒 → 汇总）+ `index.ts` 注册
-- **验收**：故意让某步失败，能看到重试与最终状态；到点自动触发一次
-- **待验证**：cron 是否按 `timezone: "Asia/Shanghai"` 到点触发（未实跑等待）；Studio 里能不能手动触发带 schedule 的工作流
-- **文档（已核实 200）**：`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/harness/background-tasks`、`/docs/harness/schedules`
+- **目标**：不打开 Studio，从自己的页面把第 8 课的 `after-sales` 用起来：触发 → 挂起时出按钮/输入框 → 点一下从断点继续
+- **能力**：`createRun()` / `run.start()` / `run.resume()`、`result.status` 判别（`success` / `suspended` / `failed`）、`result.suspended` 与 `steps[step].suspendPayload`
+- **依据（2026-10-04 核对官方文档 workflows/overview 与 suspend-and-resume）**：`mastra.getWorkflow(<注册 key>)` 取工作流；`createRun()` → `run.start({ inputData })` 跑到结束或挂起；`result.status === "suspended"` 时可用 `result.suspended`（步骤路径数组，顶层取 `[0][0]`）与 `result.steps[step].suspendPayload`；`success` 取 `result.result`；恢复用 `createRun({ runId })` + `run.resume({ step, resumeData })`
+- **改动文件**：新建 `app/api/after-sales/route.ts`（POST 触发 / PATCH 恢复，两个请求）+ 新建 `app/after-sales/page.tsx`（客户消息 → 触发；`approval` 挂起出「批准 / 驳回」，缺信息挂起出候选与输入框）。`src/mastra/index.ts` 不用改
+- **验收**：`localhost:3000/after-sales` 输入「NX-1007 没拆封，我想退」→ 页面出审批按钮 → 点批准 → 出现回复，全程不开 Studio（已实测：触发/批准/驳回/补订单号四条路径都通）
+- **踩坑**：`getWorkflow()` 的参数是 `index.ts` 里 `workflows: { ... }` 的 **key**（我们这里是 `afterSalesWorkflow`），不是工作流的 `id`（`after-sales`）
+- **原第 9 课内容（重试 / 定时 / 批量）去处**：不再单独成课，作为延伸阅读保留在课页右侧链接（Error Handling、Scheduled Workflows、Workers），素材留在 git 历史里（`d4c3f99` 之前那一版）
+- **文档（已核实 200）**：`/docs/workflows/overview`、`/docs/workflows/suspend-and-resume`、`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/deployment/workers`
 
 ### 第 10 课 · RAG：知识库与检索
 

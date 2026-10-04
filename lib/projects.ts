@@ -2342,160 +2342,274 @@ export async function approveRun(runId: string, approved: boolean) {
   {
     kind: "project",
     slug: "workflow-resilience",
-    title: "工作流（三）：容错与定时",
+    title: "工作流（三）：接到你的应用",
     menuTitle: "工作流（三）",
     summary:
-      "让流程自己扛住失败、按点自己跑：失败按策略重试、出错有统一兜底、到点自动做一次订单巡检。",
+      "把工作流从 Studio 搬进你自己的页面：客户发消息触发流程，挂起时页面出按钮，点一下从断点继续跑完。",
     verify: {
-      label: "看两个工作流",
+      label: "打开自己的页面跑一遍",
       description: [
-        "打开 http://localhost:4111/workflows，能看到 after-sales 与 daily-check 两个工作流",
-        "这是一个会重试、会兜底、会定时自跑的客服工作流：步骤失败按配置重试；每天 9 点自动巡检一次，每单单独生成一条提醒",
+        "打开 http://localhost:3000/after-sales，输入「NX-1007 没拆封，我想退」",
+        "页面出现「批准退款 / 驳回」两个按钮 —— 那是工作流挂起等主管，不是页面自己编的",
+        "点「批准退款」→ 页面出现客服回复；全程不打开 Studio",
+        "（可选）输入「生命之水没拆封，我想退」：页面列出三张候选订单，点一张再继续跑到审批",
       ],
     },
     concepts: [
-      "retryConfig — 工作流级重试：{ attempts, delay } 对所有步骤生效",
-      "retries — 步骤级重试次数，写在 createStep 里，会覆盖工作流级的配置",
-      "options.onError — 只在最终失败时调用：拿得到 error、status（failed / tripwire）与各步骤结果，适合统一发告警",
-      ".foreach — 对数组里每一项跑同一个步骤：前一步的输出必须是数组，步骤收到的是单个元素，跑完又拼回数组（后面接汇总步骤）",
-      "schedule — 在 createWorkflow 里写 { cron, timezone, inputData }，Mastra 启动时自动接管；同一个工作流照样能被手动运行",
-      "Background Tasks — 跑很久的任务不想占着请求就丢到后台执行（本课不展开，链接在右侧）",
+      "在代码里跑工作流 — createRun() 拿一次运行，run.start({ inputData }) 一路跑到结束或挂起才返回（想看过程用 run.stream()）",
+      "result.status 判别 — success 取 result.result；suspended 取 result.suspended（挂起步骤的路径）与 result.steps[step].suspendPayload（那一步写出来给人看的）；failed 取 result.error",
+      "run.resume({ step, resumeData }) — 用 createRun({ runId }) 把那次运行取回来再恢复，所以恢复可以发生在另一个请求、另一个进程、甚至几天后",
+      "runId 必须落库 — 挂起状态存在 storage 里（第 6 课那套），否则进程重启后找不到那次运行，就恢复不了",
+      "「挂起时要展示什么」是数据，怎么渲染是前端 — suspendSchema 决定内容，页面自己决定出按钮还是输入框（Studio 里只能手填 JSON）",
+      "生产的三个注意 — 接口要鉴权（别裸暴露给外网）、多实例别重复触发、长流程别在请求里同步等",
+      "本课没展开的 — 重试与失败兜底（retryConfig / options.onError）、定时与批量（schedule / .foreach）见右侧文档，用得上再看",
     ],
     docLinks: [
-      { title: "Error Handling", href: "https://mastra.ai/docs/workflows/error-handling" },
-      { title: "Scheduled Workflows", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
-      { title: "Background Tasks", href: "https://mastra.ai/docs/harness/background-tasks" },
-      { title: "Schedules", href: "https://mastra.ai/docs/harness/schedules" },
+      { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
+      { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
+      { title: "Error Handling（重试与兜底）", href: "https://mastra.ai/docs/workflows/error-handling" },
+      { title: "Scheduled Workflows（定时）", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
+      { title: "Workers（丢到后台进程跑）", href: "https://mastra.ai/docs/deployment/workers" },
     ],
     files: [
       {
-        path: "src/mastra/workflows/after-sales.ts",
+        path: "app/api/after-sales/route.ts",
         order: 1,
-        action: "edit",
-        hint: "在第 8 课的流程上加：重试策略与失败兜底（不要整体覆盖）",
-        code: `// ① 工作流定义里加 retryConfig（所有步骤通用）与 onError（最终失败的兜底）
-const afterSalesWorkflow = createWorkflow({
-  id: "after-sales",
-  inputSchema: z.object({ message: z.string() }),
-  outputSchema: z.object({ answer: z.string() }),
-  stateSchema,
-  // 失败重试 3 次，间隔 1 秒
-  retryConfig: { attempts: 3, delay: 1000 },
-  options: {
-    onError: async (errorInfo) => {
-      console.error("[after-sales] 失败：", errorInfo.error?.message);
-    },
-  },
-})
-  .then(classify)
-  .then(lookupOrder)
-  .then(judge)
-  .branch([
-    [async ({ inputData }) => inputData.needsApproval, approval],
-    [async ({ inputData }) => !inputData.needsApproval, autoPass],
-  ])
-  .then(reply)
-  .commit();
+        action: "create",
+        hint: "新建接口：POST 触发工作流（跑到挂起或结束），PATCH 用 runId 从断点恢复 —— 触发与恢复是两个请求，中间隔着等客户的时间",
+        code: `import { NextResponse } from "next/server";
+import { mastra } from "@/src/mastra";
 
-// ② 只想给某一步单独设重试次数，就写在 createStep({ ... }) 里（覆盖工作流级）
-const lookupOrder = createStep({
-  id: "lookup-order",
-  description: "先按订单号、再按商品名查订单 —— 唯一命中才写进状态",
-  retries: 3,
-  // ...其余同上一课
-});
-`,
+// 只看我们用到的那几个字段
+type RunOutcome = {
+  status: string;
+  suspended?: string[][];
+  steps?: Record<string, { suspendPayload?: unknown }>;
+  result?: { answer?: string };
+  error?: { message?: string };
+};
+
+// 把一次运行的结果整理成页面要的两件事：
+// 跑完了 → 给回复；挂起了 → 给「停在哪一步、要问什么」
+function shape(outcome: RunOutcome) {
+  if (outcome.status === "suspended") {
+    // suspended 是挂起步骤的路径数组，顶层步骤取 [0][0] 就是步骤 id
+    const step = outcome.suspended?.[0]?.[0] ?? "";
+    return {
+      status: "suspended" as const,
+      step,
+      // 那一步 suspend({...}) 写出来给人看的内容（问题、候选项、金额…）
+      ask: outcome.steps?.[step]?.suspendPayload,
+    };
+  }
+  if (outcome.status === "success") {
+    return {
+      status: "success" as const,
+      answer: outcome.result?.answer ?? "",
+    };
+  }
+  return {
+    status: "failed" as const,
+    error: outcome.error?.message ?? \`运行结束：\${outcome.status}\`,
+  };
+}
+
+// POST：客户发一条消息 → 跑工作流（一路跑到挂起或结束）
+export async function POST(req: Request) {
+  const { message } = await req.json();
+  // getWorkflow 的参数是 index.ts 里 workflows 注册的那个 key（不是工作流的 id）
+  const workflow = mastra.getWorkflow("afterSalesWorkflow");
+  const run = await workflow.createRun();
+  const result = await run.start({ inputData: { message } });
+  // runId 一并返回给页面：后面恢复那次运行全靠它
+  return NextResponse.json({ runId: run.runId, ...shape(result) });
+}
+
+// PATCH：客户或主管答完了 → 拿 runId 把那次运行取回来，从断点继续
+// 触发与恢复是两个请求，中间可能隔几分钟、也可能在另一个进程里恢复
+export async function PATCH(req: Request) {
+  const { runId, step, resumeData } = await req.json();
+  const workflow = mastra.getWorkflow("afterSalesWorkflow");
+  const run = await workflow.createRun({ runId });
+  const result = await run.resume({ step, resumeData });
+  return NextResponse.json({ runId: run.runId, ...shape(result) });
+}`,
       },
       {
-        path: "src/mastra/workflows/daily-check.ts",
+        path: "app/after-sales/page.tsx",
         order: 2,
         action: "create",
-        hint: "新建一个定时工作流：每天 9 点自动巡检，扫出快到窗口的订单后逐单生成提醒，最后汇总",
-        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
-import { z } from "zod";
-import { orders } from "../data/orders";
+        hint: "新建页面：客户消息 → 触发；挂起时按步骤渲染 —— approval 出「批准 / 驳回」按钮，缺信息出候选订单与输入框；点一下调 PATCH 继续",
+        code: `"use client";
 
-// 第一步：扫一遍订单，挑出快到 7 天 / 15 天售后窗口的
-// 输出故意做成数组 —— 下一步的 .foreach 要遍历它
-const scan = createStep({
-  id: "scan",
-  description: "扫一遍订单，挑出快到售后窗口的",
-  inputSchema: z.object({}),
-  outputSchema: z.array(
-    z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
-  ),
-  execute: async () =>
-    orders
-      .filter(
-        (item) =>
-          item.deliveredDaysAgo !== null &&
-          item.deliveredDaysAgo >= 5 &&
-          item.deliveredDaysAgo <= 15,
-      )
-      .map((item) => ({
-        orderId: item.orderId,
-        sku: item.sku,
-        days: item.deliveredDaysAgo ?? 0,
-      })),
-});
+import { useState } from "react";
 
-// 每次只处理一单：.foreach 把上面的数组拆开，逐个喂给这个步骤
-const remind = createStep({
-  id: "remind",
-  description: "为一单生成一条待跟进提醒",
-  inputSchema: z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
-  outputSchema: z.object({ text: z.string() }),
-  execute: async ({ inputData }) => ({
-    text: inputData.orderId + " " + inputData.sku + " 已签收 " + inputData.days + " 天",
-  }),
-});
+// 工作流挂起时会写出一段给人看的内容，形状由各个步骤的 suspendSchema 决定
+type Ask = {
+  question?: string;
+  reason?: string;
+  orderId?: string;
+  candidates?: { orderId: string; sku: string }[];
+};
 
-// 汇总：.foreach 的产物又是数组，所以这一步收数组
-const collect = createStep({
-  id: "collect",
-  description: "把待跟进清单整理成一行摘要",
-  inputSchema: z.array(z.object({ text: z.string() })),
-  outputSchema: z.object({ count: z.number(), summary: z.string() }),
-  execute: async ({ inputData }) => {
-    const count = inputData.length;
-    return {
-      count,
-      summary:
-        count === 0
-          ? "今天没有快到窗口的订单"
-          : inputData.map((item) => item.text).join("；"),
-    };
-  },
-});
+type Outcome =
+  | { runId: string; status: "suspended"; step: string; ask: Ask }
+  | { runId: string; status: "success"; answer: string }
+  | { runId: string; status: "failed"; error?: string };
 
-export const dailyCheckWorkflow = createWorkflow({
-  id: "daily-check",
-  inputSchema: z.object({}),
-  outputSchema: z.object({ count: z.number(), summary: z.string() }),
-  // 每天 9 点（上海时间）自动跑一次；Mastra 启动时会接管这个 schedule，不用另外注册
-  schedule: {
-    cron: "0 9 * * *",
-    timezone: "Asia/Shanghai",
-    inputData: {},
-  },
-})
-  .then(scan)
-  .foreach(remind)
-  .then(collect)
-  .commit();
-`,
-      },
-      {
-        path: "src/mastra/index.ts",
-        order: 3,
-        action: "edit",
-        hint: "把新工作流也注册进去（带 schedule 的工作流同样要注册才会被调度）",
-        code: `// ① 顶部加一行 import
-import { dailyCheckWorkflow } from "./workflows/daily-check";
+export default function AfterSalesPage() {
+  const [message, setMessage] = useState("NX-1007 没拆封，我想退");
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false);
 
-// ② workflows 里加一项
-workflows: { weatherWorkflow, afterSalesWorkflow, dailyCheckWorkflow },
-`,
+  // 触发：客户发一条消息，工作流一路跑到挂起或结束
+  async function send() {
+    setBusy(true);
+    setOutcome(null);
+    setReply("");
+    const res = await fetch("/api/after-sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    setOutcome(await res.json());
+    setBusy(false);
+  }
+
+  // 恢复：把答案交回去，从挂起的那一步继续跑
+  async function resume(resumeData: unknown) {
+    if (!outcome || outcome.status !== "suspended") return;
+    setBusy(true);
+    const res = await fetch("/api/after-sales", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId: outcome.runId, step: outcome.step, resumeData }),
+    });
+    setOutcome(await res.json());
+    setReply("");
+    setBusy(false);
+  }
+
+  const suspended = outcome?.status === "suspended";
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
+      <header>
+        <h1 className="text-lg font-medium text-zinc-800">虚拟宇宙公司 · 售后处理台</h1>
+        <p className="text-[13px] text-zinc-400">
+          客户发消息 → 工作流判定；需要人拍板时它会停住，等你点。
+        </p>
+      </header>
+
+      {/* 客户消息 */}
+      <section className="rounded-2xl border border-zinc-200 p-4">
+        <label className="text-xs text-zinc-400">客户原话</label>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={2}
+          className="mt-1 w-full resize-none rounded-xl bg-zinc-50 px-3 py-2 text-[15px] leading-7 text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
+        />
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={send}
+            disabled={busy || !message.trim()}
+            className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+          >
+            {busy ? "处理中…" : "发送"}
+          </button>
+        </div>
+      </section>
+
+      {/* 运行结果 */}
+      {outcome && (
+        <section className="space-y-3">
+          {outcome.status === "success" && (
+            <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-[15px] leading-7 text-zinc-800 ring-1 ring-zinc-100">
+              {outcome.answer}
+            </div>
+          )}
+
+          {outcome.status === "suspended" && outcome.step === "approval" && (
+            <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <p className="text-[13px] text-amber-700">超出客服权限，等主管批准</p>
+              <p className="text-[15px] leading-7 text-zinc-800">{outcome.ask.reason}</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => resume({ approved: true })}
+                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+                >
+                  批准退款
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => resume({ approved: false })}
+                  className="rounded-xl px-4 py-1.5 text-sm text-zinc-600 ring-1 ring-zinc-300 disabled:opacity-40"
+                >
+                  驳回
+                </button>
+              </div>
+            </div>
+          )}
+
+          {outcome.status === "suspended" && outcome.step !== "approval" && (
+            <div className="space-y-3 rounded-2xl border border-zinc-200 p-4">
+              <p className="text-xs text-zinc-400">{outcome.ask.question}</p>
+              {outcome.ask.candidates && outcome.ask.candidates.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {outcome.ask.candidates.map((item) => (
+                    <button
+                      key={item.orderId}
+                      type="button"
+                      onClick={() => setReply(item.orderId)}
+                      className={\`rounded-xl px-3 py-1.5 text-[13px] ring-1 \${
+                        reply === item.orderId
+                          ? "bg-zinc-800 text-white ring-zinc-800"
+                          : "text-zinc-600 ring-zinc-200 hover:bg-zinc-50"
+                      }\`}
+                    >
+                      {item.orderId} · {item.sku}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="客户的补充，例如 NX-1007"
+                  className="flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-[15px] text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
+                />
+                <button
+                  type="button"
+                  disabled={busy || !reply.trim()}
+                  onClick={() => resume({ reply })}
+                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+                >
+                  继续
+                </button>
+              </div>
+            </div>
+          )}
+
+          {outcome.status === "failed" && (
+            <p className="text-[13px] text-red-500">运行失败：{outcome.error}</p>
+          )}
+
+          <p className="text-xs text-zinc-300">
+            runId {outcome.runId} · 当前状态 {outcome.status}
+            {suspended ? \` · 停在 \${outcome.step}\` : ""}
+          </p>
+        </section>
+      )}
+    </main>
+  );
+}`,
       },
     ],
   },
