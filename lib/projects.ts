@@ -1587,10 +1587,10 @@ function SendButton({
       ],
     },
     concepts: [
-      "createWorkflow — 定义一个工作流：id、inputSchema、outputSchema、stateSchema，用 .then() / .branch() / .parallel() 串步骤，最后 .commit()",
-      "createStep — 一步：id、inputSchema、outputSchema，execute 拿到 { inputData, state, setState, mastra, requestContext }",
+      "createWorkflow — 定义一个工作流：id、inputSchema、outputSchema、stateSchema；用 .then() 把步骤依次接起来，最后 .commit()",
+      "createStep — 一个步骤 = 一件独立的小事（分类 / 查订单 / 判资格 / 写回复）：自己声明 inputSchema / outputSchema；执行时拿到上一步的产物 inputData，以及共享的 state 与 mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
-      "Control Flow — .then 顺序、.branch 条件分支、.parallel 并行；分支写成一串 [条件函数, 步骤]",
+      "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（本课只用这一种；分支 / 并行 / 循环见官方文档）",
       "步骤里调 agent / 调工具 — mastra.getAgent(\"support-agent\") 拿 agent；工具直接 findOrders.execute(input, { requestContext })",
     ],
     docLinks: [
