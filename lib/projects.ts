@@ -1592,6 +1592,7 @@ function SendButton({
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
       "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
       "意图分流 — 同一个流程里按 intent 各走各的处理：退货走售后政策、物流回运输状态、咨询交给模型直接答；结论都写进 state，最后一步统一回复",
+      "问题类型 issue — 分类时一起判出来（unopened 没拆封 / quality 坏了 / other 其他）：退货走 P1 还是 P2 / P3 靠它；客户没说就按 quality",
       "步骤用哪个 agent — 每个步骤配自己的 agent：classifier-agent 只管分类、reply-agent 只管措辞，都不挂 tools；别复用客服 agent，它的角色与工具会一起带进来",
       "步骤里调 agent / 调业务函数 — mastra.getAgentById(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
     ],
@@ -1837,9 +1838,10 @@ export function judgeReturn(input: {
 export const classifierAgent = new Agent({
   id: "classifier-agent",
   name: "意图分类",
-  instructions: \`你只做一件事：把客户的话归类，并抽出他提到的商品名。
+  instructions: \`你只做一件事：把客户的话归类，并抽出商品名与问题类型。
 - intent 三选一：return（退 / 换 / 修）、logistics（物流 / 运输）、question（其他咨询）
 - sku：客户提到的商品名；没提就不填
+- issue 三选一：unopened（没拆封 / 不要了，想退货）、quality（坏了 / 故障 / 不能用）、other（其他）
 - 不要回答客户，不要解释，不要寒暄\`,
   model: "deepseek/deepseek-flash",
 });
@@ -1875,12 +1877,14 @@ import { queryOrders } from "../tools/lookup-tool";
 import { judgeReturn } from "../tools/return-tool";
 
 const intentSchema = z.enum(["return", "logistics", "question"]);
+const issueSchema = z.enum(["unopened", "quality", "other"]);
 
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
   message: z.string().optional(),
   intent: intentSchema.optional(),
   sku: z.string().optional(),
+  issue: issueSchema.optional(),
   orderId: z.string().optional(),
   logistics: z.string().optional(),
   decision: z.string().optional(),
@@ -1892,7 +1896,11 @@ const classify = createStep({
   id: "classify",
   description: "判断客户这句话属于退换、物流还是其他咨询",
   inputSchema: z.object({ message: z.string() }),
-  outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
+  outputSchema: z.object({
+    intent: intentSchema,
+    sku: z.string().optional(),
+    issue: issueSchema,
+  }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
     // 分类规则写在 classifier-agent 的 instructions 里，这一步只把客户原话递过去
@@ -1900,12 +1908,18 @@ const classify = createStep({
     if (!agent) throw new Error("classifier-agent not found");
     const res = await agent.generate(inputData.message, {
       structuredOutput: {
-        schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
+        schema: z.object({
+          intent: intentSchema,
+          sku: z.string().optional(),
+          issue: issueSchema.optional(),
+        }),
       },
     });
     const out = res.object ?? { intent: "question" as const };
-    await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
-    return out;
+    // 问题类型决定后面走哪条政策：没提就按质量问题
+    const issue = out.issue ?? "quality";
+    await setState({ message: inputData.message, intent: out.intent, sku: out.sku, issue });
+    return { intent: out.intent, sku: out.sku, issue };
   },
 });
 
@@ -1915,8 +1929,9 @@ const lookupOrder = createStep({
   id: "lookup-order",
   description: "按商品名查订单，唯一命中就写进状态",
   inputSchema: z.object({
-    intent: z.enum(["return", "logistics", "question"]),
+    intent: intentSchema,
     sku: z.string().optional(),
+    issue: issueSchema,
   }),
   outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
@@ -1968,7 +1983,7 @@ const judge = createStep({
       await setState({ decision: "need-info", reason });
       return { decision: "need-info", reason };
     }
-    const verdict = judgeReturn({ orderId: state.orderId, issue: "quality" });
+    const verdict = judgeReturn({ orderId: state.orderId, issue: state.issue ?? "quality" });
     await setState({ decision: verdict.decision, reason: verdict.reason });
     return { decision: verdict.decision, reason: verdict.reason };
   },
@@ -2036,7 +2051,8 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       label: "去 Studio 试审批",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
-        "这是一个会分路的客服工作流：超出客服权限的退款会挂起等主管批，其余判定直接放行",
+        "跑「NX-1007 没拆封，我想退」：判为可退款且金额超出客服权限，会挂起等主管批；批准后从断点继续跑完",
+        "其余判定（换新 / 维修 / 拒绝）直接放行，不会挂起",
       ],
     },
     concepts: [
@@ -2066,12 +2082,14 @@ import { queryOrders } from "../tools/lookup-tool";
 import { judgeReturn } from "../tools/return-tool";
 
 const intentSchema = z.enum(["return", "logistics", "question"]);
+const issueSchema = z.enum(["unopened", "quality", "other"]);
 
 // 所有步骤共享的状态：客户在办哪一单、办到哪一步
 const stateSchema = z.object({
   message: z.string().optional(),
   intent: intentSchema.optional(),
   sku: z.string().optional(),
+  issue: issueSchema.optional(),
   orderId: z.string().optional(),
   logistics: z.string().optional(),
   decision: z.string().optional(),
@@ -2083,7 +2101,11 @@ const classify = createStep({
   id: "classify",
   description: "判断客户这句话属于退换、物流还是其他咨询",
   inputSchema: z.object({ message: z.string() }),
-  outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
+  outputSchema: z.object({
+    intent: intentSchema,
+    sku: z.string().optional(),
+    issue: issueSchema,
+  }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
     // 分类规则写在 classifier-agent 的 instructions 里，这一步只把客户原话递过去
@@ -2091,12 +2113,18 @@ const classify = createStep({
     if (!agent) throw new Error("classifier-agent not found");
     const res = await agent.generate(inputData.message, {
       structuredOutput: {
-        schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
+        schema: z.object({
+          intent: intentSchema,
+          sku: z.string().optional(),
+          issue: issueSchema.optional(),
+        }),
       },
     });
     const out = res.object ?? { intent: "question" as const };
-    await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
-    return out;
+    // 问题类型决定后面走哪条政策：没提就按质量问题
+    const issue = out.issue ?? "quality";
+    await setState({ message: inputData.message, intent: out.intent, sku: out.sku, issue });
+    return { intent: out.intent, sku: out.sku, issue };
   },
 });
 
@@ -2106,8 +2134,9 @@ const lookupOrder = createStep({
   id: "lookup-order",
   description: "按商品名查订单，唯一命中就写进状态",
   inputSchema: z.object({
-    intent: z.enum(["return", "logistics", "question"]),
+    intent: intentSchema,
     sku: z.string().optional(),
+    issue: issueSchema,
   }),
   outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
@@ -2163,7 +2192,7 @@ const judge = createStep({
       await setState({ decision: "need-info", reason });
       return { decision: "need-info", reason, needsApproval: false };
     }
-    const verdict = judgeReturn({ orderId: state.orderId, issue: "quality" });
+    const verdict = judgeReturn({ orderId: state.orderId, issue: state.issue ?? "quality" });
     // P4：客服可自主补偿 ≤ 50 黑龙币；超出的退款必须主管点头
     const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
     const needsApproval = verdict.decision === "refund" && price > 50;

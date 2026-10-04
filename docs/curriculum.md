@@ -155,7 +155,7 @@
 
 ### 第 7 课 · 工作流（一）：把问答变成流程
 
-- **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 查订单 → 判定 → 回复**；三类意图都走通（退货判退 / 换 / 修、物流回运输状态、咨询直接答），在 workflow 里调 agent 与工具导出的业务函数
+- **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 查订单 → 判定 → 回复**；三类意图都走通（退货判退 / 换 / 修、物流回运输状态、咨询直接答）；分类同时抽出问题类型（unopened / quality），退货据此走 P1 或 P2 / P3
 - **能力**：Workflow State、Control Flow（`.then()` 顺序）、Agents and Tools
 - **依赖**：无新增（工作流在 `@mastra/core/workflows` 里）
 - **新增/改动文件**：覆盖 `src/mastra/tools/lookup-tool.ts` + `return-tool.ts`（把业务逻辑抽成 `queryOrders` / `judgeReturn`）、新建 `src/mastra/agents/classifier-agent.ts` + `reply-agent.ts`（各管一件事、都不挂 tools）、新建 `src/mastra/workflows/after-sales.ts`、`src/mastra/index.ts`（注册两个 agent 与工作流）
