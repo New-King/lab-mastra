@@ -1592,6 +1592,7 @@ function SendButton({
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
       "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
       "意图分流 — 同一个流程里按 intent 各走各的处理：退货走售后政策、物流回运输状态、咨询交给模型直接答；结论都写进 state，最后一步统一回复",
+      "步骤用哪个 agent — 每个步骤配自己的 agent：classifier-agent 只管分类、reply-agent 只管措辞，都不挂 tools；别复用客服 agent，它的角色与工具会一起带进来",
       "步骤里调 agent / 调业务函数 — mastra.getAgentById(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
     ],
     docLinks: [
@@ -1826,8 +1827,45 @@ export function judgeReturn(input: {
 `,
       },
       {
-        path: "src/mastra/workflows/after-sales.ts",
+        path: "src/mastra/agents/classifier-agent.ts",
         order: 3,
+        action: "create",
+        hint: "新建一个只管分类的 agent：提示词只说分类规则，不挂任何工具",
+        code: `import { Agent } from "@mastra/core/agent";
+
+// 这一步只做分类：提示词只写分类规则，不挂 tools —— 分类不需要任何工具
+export const classifierAgent = new Agent({
+  id: "classifier-agent",
+  name: "意图分类",
+  instructions: \`你只做一件事：把客户的话归类，并抽出他提到的商品名。
+- intent 三选一：return（退 / 换 / 修）、logistics（物流 / 运输）、question（其他咨询）
+- sku：客户提到的商品名；没提就不填
+- 不要回答客户，不要解释，不要寒暄\`,
+  model: "deepseek/deepseek-flash",
+});
+`,
+      },
+      {
+        path: "src/mastra/agents/reply-agent.ts",
+        order: 4,
+        action: "create",
+        hint: "再来一个只管措辞的 agent：把结论转成客户听得懂的话，同样不挂工具",
+        code: `import { Agent } from "@mastra/core/agent";
+
+// 这一步只负责措辞：事实由工作流给出，它只把话说明白
+export const replyAgent = new Agent({
+  id: "reply-agent",
+  name: "客服措辞",
+  instructions: \`你是虚拟宇宙公司客服的措辞助手，只把收到的结论转成给客户看的话。
+- 简短、专业；不加承诺、不编造政策
+- 结论不明确或需要转人工时，照实说明\`,
+  model: "deepseek/deepseek-flash",
+});
+`,
+      },
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 5,
         action: "create",
         hint: "把一次售后处理做成工作流（脚手架自带的 weather-workflow.ts 保持不动）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -1857,16 +1895,14 @@ const classify = createStep({
   outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
-    const agent = mastra?.getAgentById("support-agent");
-    if (!agent) throw new Error("support-agent not found");
-    const res = await agent.generate(
-      "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
-      {
-        structuredOutput: {
-          schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
-        },
+    // 分类规则写在 classifier-agent 的 instructions 里，这一步只把客户原话递过去
+    const agent = mastra?.getAgentById("classifier-agent");
+    if (!agent) throw new Error("classifier-agent not found");
+    const res = await agent.generate(inputData.message, {
+      structuredOutput: {
+        schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
       },
-    );
+    });
     const out = res.object ?? { intent: "question" as const };
     await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
     return out;
@@ -1946,7 +1982,7 @@ const reply = createStep({
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
   execute: async ({ state, mastra }) => {
-    const agent = mastra?.getAgentById("support-agent");
+    const agent = mastra?.getAgentById("reply-agent");
     const question = state.message ?? "";
     const prompt =
       state.decision === "answer"
@@ -1974,13 +2010,16 @@ export const afterSalesWorkflow = createWorkflow({
       },
       {
         path: "src/mastra/index.ts",
-        order: 4,
+        order: 6,
         action: "edit",
-        hint: "只加两处：import 与 workflows 里的一项，其余配置不动",
-        code: `// ① 顶部加一行 import
+        hint: "注册两个专用 agent 与这个工作流：import 三行 + agents / workflows 各加项，其余配置不动",
+        code: `// ① 顶部加三个 import：两个专用 agent + 一个工作流
+import { classifierAgent } from "./agents/classifier-agent";
+import { replyAgent } from "./agents/reply-agent";
 import { afterSalesWorkflow } from "./workflows/after-sales";
 
-// ② 在 new Mastra({ ... }) 的 workflows 里加一项
+// ② agents 里加两个专用 agent，workflows 里加一项
+agents: { weatherAgent, supportAgent, classifierAgent, replyAgent },
 workflows: { weatherWorkflow, afterSalesWorkflow },
 `,
       },
@@ -2047,16 +2086,14 @@ const classify = createStep({
   outputSchema: z.object({ intent: intentSchema, sku: z.string().optional() }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
-    const agent = mastra?.getAgentById("support-agent");
-    if (!agent) throw new Error("support-agent not found");
-    const res = await agent.generate(
-      "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
-      {
-        structuredOutput: {
-          schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
-        },
+    // 分类规则写在 classifier-agent 的 instructions 里，这一步只把客户原话递过去
+    const agent = mastra?.getAgentById("classifier-agent");
+    if (!agent) throw new Error("classifier-agent not found");
+    const res = await agent.generate(inputData.message, {
+      structuredOutput: {
+        schema: z.object({ intent: intentSchema, sku: z.string().optional() }),
       },
-    );
+    });
     const out = res.object ?? { intent: "question" as const };
     await setState({ message: inputData.message, intent: out.intent, sku: out.sku });
     return out;
@@ -2199,7 +2236,7 @@ const reply = createStep({
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
   execute: async ({ state, mastra }) => {
-    const agent = mastra?.getAgentById("support-agent");
+    const agent = mastra?.getAgentById("reply-agent");
     const question = state.message ?? "";
     const prompt =
       state.decision === "answer"
