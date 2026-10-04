@@ -1591,7 +1591,7 @@ function SendButton({
       "createStep — 一个步骤 = 一件独立的小事（分类 / 查订单 / 判资格 / 写回复）：自己声明 inputSchema / outputSchema；执行时拿到上一步的产物 inputData，以及共享的 state 与 mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
       "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
-      "步骤里调 agent / 调业务函数 — mastra.getAgent(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
+      "步骤里调 agent / 调业务函数 — mastra.getAgentById(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
     ],
     docLinks: [
       { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
@@ -1854,7 +1854,7 @@ const classify = createStep({
   }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
-    const agent = mastra?.getAgent("support-agent");
+    const agent = mastra?.getAgentById("support-agent");
     if (!agent) throw new Error("support-agent not found");
     const res = await agent.generate(
       "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
@@ -1919,7 +1919,7 @@ const reply = createStep({
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
   execute: async ({ inputData, state, mastra }) => {
-    const agent = mastra?.getAgent("support-agent");
+    const agent = mastra?.getAgentById("support-agent");
     const prompt =
       "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
       "判定：" + inputData.decision + "\\n依据：" + inputData.reason +
@@ -2016,7 +2016,7 @@ const classify = createStep({
   }),
   stateSchema,
   execute: async ({ inputData, mastra, setState }) => {
-    const agent = mastra?.getAgent("support-agent");
+    const agent = mastra?.getAgentById("support-agent");
     if (!agent) throw new Error("support-agent not found");
     const res = await agent.generate(
       "把客户这句话归类，并抽出他说的商品名。客户原话：" + inputData.message,
@@ -2144,7 +2144,7 @@ const reply = createStep({
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
   execute: async ({ state, mastra }) => {
-    const agent = mastra?.getAgent("support-agent");
+    const agent = mastra?.getAgentById("support-agent");
     const prompt =
       "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
       "判定：" + (state.decision ?? "") + "\\n依据：" + (state.reason ?? "") +
