@@ -547,7 +547,7 @@ export const listProducts = createTool({
 
 // 查订单：客户不记得订单号时用它 —— 不要让客户去背订单号
 // 商品名按「包含」匹配（去掉空格、忽略大小写），所以「刀」「飞刀」「S 级飞刀」都能命中同一件商品
-const normalizeSku = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+const normalizeSku = (value: string) => value.replace(/\\s+/g, "").toLowerCase();
 
 export const findOrders = createTool({
   id: "find-orders",
@@ -1583,6 +1583,7 @@ function SendButton({
       label: "去 Studio 跑流程",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
+        "试「NX-1007 没拆封，我想退」：判成可退款（未拆封 + 签收 3 天，在 7 天窗口内）",
         "这是一个把售后处理串成流程的客服工作流：意图分类、查订单、判定、生成回复按步执行；退货走售后政策、物流回运输状态、咨询直接回答，每步的输入输出都能查到",
       ],
     },
@@ -1595,6 +1596,7 @@ function SendButton({
       "问题类型 issue — 分类时一起判出来（unopened 没拆封 / quality 坏了 / other 其他）：退货走 P1 还是 P2 / P3 靠它；客户没说就按 quality",
       "步骤用哪个 agent — 每个步骤配自己的 agent：classifier-agent 只管分类、reply-agent 只管措辞，都不挂 tools；别复用客服 agent，它的角色与工具会一起带进来",
       "步骤里调 agent / 调业务函数 — mastra.getAgentById(\"support-agent\") 拿 agent；查订单与判资格直接用工具文件里导出的普通函数（queryOrders / judgeReturn），不用绕进 tool.execute",
+      "查订单怎么定唯一一单 — 客户报了订单号就按它精确查（订单号唯一）；没报再按商品名模糊查。命中不唯一（同名商品有多单）就不猜，把「是哪一单」还给客户 —— 工作流是可以停下问的",
     ],
     docLinks: [
       { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
@@ -1636,7 +1638,7 @@ export const listProducts = createTool({
 
 // 查订单：客户不记得订单号时用它 —— 不要让客户去背订单号
 // 商品名按「包含」匹配（去掉空格、忽略大小写），所以「刀」「飞刀」「S 级飞刀」都能命中同一件商品
-const normalizeSku = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+const normalizeSku = (value: string) => value.replace(/\\s+/g, "").toLowerCase();
 
 export const findOrders = createTool({
   id: "find-orders",
@@ -1927,7 +1929,7 @@ const classify = createStep({
 //    inputSchema 必须接住上一步的 output（intent + sku）—— 这两个字段这一步都真用到
 const lookupOrder = createStep({
   id: "lookup-order",
-  description: "按商品名查订单，唯一命中就写进状态",
+  description: "先按订单号、再按商品名查订单 —— 唯一命中才写进状态",
   inputSchema: z.object({
     intent: intentSchema,
     sku: z.string().optional(),
@@ -1935,12 +1937,16 @@ const lookupOrder = createStep({
   }),
   outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
-  execute: async ({ inputData, setState }) => {
+  execute: async ({ inputData, state, setState }) => {
     // 纯咨询不查订单；退货与物流都要查
     if (inputData.intent === "question") {
       return { intent: inputData.intent, found: false };
     }
-    const { orders: matched } = queryOrders({ sku: inputData.sku });
+    // 客户报了订单号就以它为准（订单号唯一，客户也常直接报它）；没报再按商品名模糊查
+    const byOrderId = state.message?.match(/NX-\\d+/i)?.[0];
+    const matched = byOrderId
+      ? orders.filter((item) => item.orderId.toUpperCase() === byOrderId.toUpperCase())
+      : queryOrders({ sku: inputData.sku }).orders;
     if (matched.length !== 1) return { intent: inputData.intent, found: false };
     const order = orders.find((item) => item.orderId === matched[0].orderId);
     await setState({
@@ -2052,12 +2058,14 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
         "跑「NX-1007 没拆封，我想退」：判为可退款且金额超出客服权限，会挂起等主管批；批准后从断点继续跑完",
+        "跑「生命之水没拆封，我想退」：同名商品有多单，会先挂在 lookup-order 问客户要订单号；补一句 NX-1007 再 resume，从断点继续判到审批",
         "其余判定（换新 / 维修 / 拒绝）直接放行，不会挂起",
       ],
     },
     concepts: [
       ".branch — 条件分支：[[async 条件函数, 步骤], ...] 依次判断，命中哪个走哪个；两条路的 inputSchema / outputSchema 必须一致，分路之后的步骤要用可选字段接（产物按步骤名分组，只有一条路会跑）",
       "suspend — 步骤里 return await suspend({ ... }) 挂起本次运行，等外部带 resumeData 回来才继续往下走",
+      "suspend 不只为审批 — 任何「这一步定不了」的等待都能挂起：缺信息等客户补（lookup-order）、超权限等主管批（approval）；同一个 run 里可以挂起多次，每次各自 resume",
       "resumeSchema / suspendSchema — 前者声明「恢复时要传什么」，后者声明「挂起时要给人看什么」",
       "run.resume({ step, resumeData }) — 从挂起点继续：step 可传步骤实例或 id；只传 resumeData 就恢复最近那个挂起点",
       "createRun({ runId }) — 拿 runId 把某次运行取回来再 resume，所以恢复可以发生在任意请求里（HTTP 路由、审批后台）",
@@ -2074,7 +2082,7 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
         path: "src/mastra/workflows/after-sales.ts",
         order: 1,
         action: "replace",
-        hint: "在上一课的流程里加一条分支：超出客服权限的退款走审批（内部挂起），其余直接放行",
+        hint: "在上一课的流程里加两处挂起：定不到唯一订单时挂起问客户要订单号；超出客服权限的退款挂起等主管批 —— 其余判定直接放行",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { orders } from "../data/orders";
@@ -2132,7 +2140,7 @@ const classify = createStep({
 //    inputSchema 必须接住上一步的 output（intent + sku）—— 这两个字段这一步都真用到
 const lookupOrder = createStep({
   id: "lookup-order",
-  description: "按商品名查订单，唯一命中就写进状态",
+  description: "先按订单号、再按商品名查订单 —— 唯一命中才写进状态；定不了就挂起，等客户补信息",
   inputSchema: z.object({
     intent: intentSchema,
     sku: z.string().optional(),
@@ -2140,13 +2148,41 @@ const lookupOrder = createStep({
   }),
   outputSchema: z.object({ intent: intentSchema, found: z.boolean() }),
   stateSchema,
-  execute: async ({ inputData, setState }) => {
+  // 恢复时外部要传什么：客户补充的那句话（一般带着订单号）
+  resumeSchema: z.object({ reply: z.string() }),
+  // 挂起时把要给人看的信息一起存下来：问什么、候选有哪些
+  suspendSchema: z.object({
+    question: z.string(),
+    candidates: z.array(z.object({ orderId: z.string(), sku: z.string() })).optional(),
+  }),
+  execute: async ({ inputData, state, resumeData, suspend, setState }) => {
     // 纯咨询不查订单；退货与物流都要查
     if (inputData.intent === "question") {
       return { intent: inputData.intent, found: false };
     }
-    const { orders: matched } = queryOrders({ sku: inputData.sku });
-    if (matched.length !== 1) return { intent: inputData.intent, found: false };
+    // 拿客户的话来定单：首次 = 原话，恢复后 = 他补充的那句
+    const text = resumeData?.reply ?? state.message ?? "";
+    // 报了订单号就以它为准（订单号唯一，客户也常直接报它）；没报再按商品名模糊查
+    const byOrderId = text.match(/NX-\\d+/i)?.[0];
+    const matched = byOrderId
+      ? orders.filter((item) => item.orderId.toUpperCase() === byOrderId.toUpperCase())
+      : queryOrders({ sku: inputData.sku }).orders;
+
+    if (matched.length !== 1) {
+      // 定不了唯一一单就别猜 —— 第一次先挂起，等客户补一句（resume 带着他的补充回来继续）
+      if (!resumeData) {
+        return await suspend({
+          question:
+            matched.length === 0
+              ? "没查到对应订单，请客户提供订单号（例如 NX-1007）"
+              : "同名商品有多单，请客户报一下订单号",
+          candidates: matched.map((item) => ({ orderId: item.orderId, sku: item.sku })),
+        });
+      }
+      // 补充之后还是定不了：不再挂起，交给 judge 走 need-info
+      return { intent: inputData.intent, found: false };
+    }
+
     const order = orders.find((item) => item.orderId === matched[0].orderId);
     await setState({
       orderId: matched[0].orderId,
@@ -2299,8 +2335,7 @@ export const afterSalesWorkflow = createWorkflow({
 export async function approveRun(runId: string, approved: boolean) {
   const run = await afterSalesWorkflow.createRun({ runId });
   return run.resume({ step: "approval", resumeData: { approved } });
-}
-`,
+}`,
       },
     ],
   },
@@ -2365,7 +2400,7 @@ const afterSalesWorkflow = createWorkflow({
 // ② 只想给某一步单独设重试次数，就写在 createStep({ ... }) 里（覆盖工作流级）
 const lookupOrder = createStep({
   id: "lookup-order",
-  description: "按商品名查订单，唯一命中就写进状态",
+  description: "先按订单号、再按商品名查订单 —— 唯一命中才写进状态",
   retries: 3,
   // ...其余同上一课
 });
