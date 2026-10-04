@@ -156,7 +156,7 @@
 ### 第 7 课 · 工作流（一）：把问答变成流程
 
 - **目标**：`createWorkflow` 把一次售后处理串成固定步骤 —— **意图分类 → 商品校验（不在售直接拒）→ 资格校验 → 处置（换新 / 退款 / 转人工）**；在 workflow 里调 agent 与第 3 课的 `checkReturnEligibility`，客户档案来自第 4 课的工作记忆
-- **能力**：Workflow State、Control Flow（分支）、Agents and Tools
+- **能力**：Workflow State、Control Flow（`.then()` 顺序）、Agents and Tools
 - **依赖**：无新增（工作流在 `@mastra/core/workflows` 里）
 - **新增/改动文件**：`src/mastra/workflows/after-sales.ts`（新建）、`src/mastra/index.ts`（注册）
 - **依据（2026-10-02 核对随包文档 + 脚手架样例 `weather-workflow.ts`）**：`createStep({ id, description, inputSchema, outputSchema, stateSchema, execute: async ({ inputData, state, setState, mastra, requestContext }) })`；`createWorkflow({ id, inputSchema, outputSchema, stateSchema }).then(a).branch([[cond, step]]).parallel([...]).commit()`；步骤里调 agent 用 `mastra.getAgent("support-agent")`，调工具用 `findOrders.execute(input, { requestContext })`；代码里取结构化结果用 `agent.generate(prompt, { structuredOutput: { schema } })` → `res.object`
@@ -169,10 +169,10 @@
 - **与场景的挂钩**：审批条件按政策 **P4**（客服可自主补偿 ≤ 50 黑龙币，超出需主管）判定，所以退款类判定一定挂起 —— 审批有真实的金钱后果
 
 - **目标**：流程跑到「等人工确认」时暂停；重启进程后从断点继续；能回看/重放快照
-- **能力**：Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel
+- **能力**：Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel、Control Flow（`.branch()` 条件分支）
 - **依据（2026-10-02 核对随包文档）**：步骤里加 `suspendSchema` / `resumeSchema`，执行时 `return await suspend({ ... })` 挂起；恢复用 `run.resume({ step, resumeData })`，只传 `resumeData` 时恢复最近一个挂起点；拿 `workflow.createRun({ runId })` 可以把某次运行取回来再 resume（所以恢复可以放在 HTTP 路由 / 审批后台里）。状态（`state`/`setState`）跨 suspend/resume 保留
 - **另一种做法（参考仓库阶段 4/6，本课不采用）**：用内置 `ask_user` 挂起 + `autoResumeSuspendedTools` 自动续跑，把控件类型（`text` / `single_select`）做成确定性字段映射 —— 适合"要给客户展示选项"的场景；我们这里审批人是我们自己的后台，直接 `resume` 更简单
-- **改动文件**：只重写 `src/mastra/workflows/after-sales.ts`（在判资格与回复之间插一步 `approval`，内部用 `orders` 取订单金额）、`src/mastra/index.ts` 不用动
+- **改动文件**：只重写 `src/mastra/workflows/after-sales.ts` —— 判资格顺带标出 `needsApproval`；判资格与回复之间用 `.branch` 分两路：审批（内部 `suspend`，用 `orders` 取订单金额）/ 直接放行；`src/mastra/index.ts` 不用动
 - **验收**：杀掉进程再启动，流程仍能续跑；快照可回放；同一个挂起点在不同答案下走不同分支
 - **待验证**：Studio 的 Workflows 页里挂起后能不能直接点恢复（界面行为未实测）；`createRun({ runId })` 跨进程恢复（runId 从库里取）是否正常
 - **文档（已核实 200）**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
@@ -180,9 +180,9 @@
 ### 第 9 课 · 工作流（三）：容错与定时
 
 - **目标**：步骤失败可重试 / 回滚；定时自动跑（日报、巡检）
-- **能力**：Error Handling、Scheduled Workflows、Harness（Background Tasks / Schedules）
+- **能力**：Error Handling、Scheduled Workflows、Control Flow（`.foreach()` 批量循环）、Harness（Background Tasks / Schedules）
 - **依据（2026-10-02 核对随包文档）**：工作流级 `retryConfig: { attempts, delay }`；步骤级 `createStep({ retries })` 覆盖前者；最终失败走 `options.onError(errorInfo)`（`error` / `status` / `steps`）。定时：在 `createWorkflow` 里写 `schedule: { cron, timezone, inputData }`，**Mastra 启动时自动接管**，不需要额外的注册调用；带 `schedule` 的工作流照样能手动 `start()`
-- **改动文件**：`after-sales.ts`（加重试与 onError）+ 新建 `daily-check.ts`（每天 9 点巡检订单）+ `index.ts` 注册
+- **改动文件**：`after-sales.ts`（加重试与 onError）+ 新建 `daily-check.ts`（每天 9 点巡检：`scan` → `.foreach` 逐单生成提醒 → 汇总）+ `index.ts` 注册
 - **验收**：故意让某步失败，能看到重试与最终状态；到点自动触发一次
 - **待验证**：cron 是否按 `timezone: "Asia/Shanghai"` 到点触发（未实跑等待）；Studio 里能不能手动触发带 schedule 的工作流
 - **文档（已核实 200）**：`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/harness/background-tasks`、`/docs/harness/schedules`

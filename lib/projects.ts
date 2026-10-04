@@ -1590,7 +1590,7 @@ function SendButton({
       "createWorkflow — 定义一个工作流：id、inputSchema、outputSchema、stateSchema；用 .then() 把步骤依次接起来，最后 .commit()",
       "createStep — 一个步骤 = 一件独立的小事（分类 / 查订单 / 判资格 / 写回复）：自己声明 inputSchema / outputSchema；执行时拿到上一步的产物 inputData，以及共享的 state 与 mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复也保留",
-      "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（本课只用这一种；分支 / 并行 / 循环见官方文档）",
+      "Control Flow — .then() 把步骤顺序接起来：上一步的 output 就是下一步的 inputData（条件分支 .branch 在第 8 课、批量循环 .foreach 在第 9 课）",
       "步骤里调 agent / 调工具 — mastra.getAgent(\"support-agent\") 拿 agent；工具直接 findOrders.execute(input, { requestContext })",
     ],
     docLinks: [
@@ -1744,15 +1744,16 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
     title: "工作流（二）：暂停恢复与人工审批",
     menuTitle: "工作流（二）",
     summary:
-      "让流程在需要人拍板的地方停下来：挂起等主管批、批完从断点继续，重启进程也不丢。",
+      "让流程会分路：需要人拍板的走审批并挂起，批完从断点继续；其余直接放行。",
     verify: {
       label: "去 Studio 试审批",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
-        "这是一个会中途等人工审批的客服工作流：退款类判定会挂起，批准或驳回后从断点继续跑完",
+        "这是一个会分路的客服工作流：超出客服权限的退款会挂起等主管批，其余判定直接放行",
       ],
     },
     concepts: [
+      ".branch — 条件分支：[[async 条件函数, 步骤], ...] 依次判断，命中哪个走哪个；两条路的 inputSchema / outputSchema 必须一致，分路之后的步骤要用可选字段接（产物按步骤名分组，只有一条路会跑）",
       "suspend — 步骤里 return await suspend({ ... }) 挂起本次运行，等外部带 resumeData 回来才继续往下走",
       "resumeSchema / suspendSchema — 前者声明「恢复时要传什么」，后者声明「挂起时要给人看什么」",
       "run.resume({ step, resumeData }) — 从挂起点继续：step 可传步骤实例或 id；只传 resumeData 就恢复最近那个挂起点",
@@ -1770,7 +1771,7 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
         path: "src/mastra/workflows/after-sales.ts",
         order: 1,
         action: "replace",
-        hint: "在上一课的流程里插一步「人工审批」：退款类判定挂起，批完再继续；其余步骤不动",
+        hint: "在上一课的流程里加一条分支：超出客服权限的退款走审批（内部挂起），其余直接放行",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { orders } from "../data/orders";
@@ -1841,71 +1842,103 @@ const lookupOrder = createStep({
 // ③ 判资格：天数与条款都在工具里，模型不参与
 const judge = createStep({
   id: "judge",
-  description: "按售后政策判定这一单能不能退 / 换 / 修",
+  description: "按售后政策判定这一单能不能退 / 换 / 修，并标明要不要主管拍板",
   inputSchema: z.object({ found: z.boolean() }),
-  outputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  outputSchema: z.object({
+    decision: z.string(),
+    reason: z.string(),
+    needsApproval: z.boolean(),
+  }),
   stateSchema,
   execute: async ({ inputData, requestContext, state, setState }) => {
     if (!inputData.found || !state.orderId) {
       const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
-      return { decision: "need-info", reason };
+      return { decision: "need-info", reason, needsApproval: false };
     }
     const verdict = await checkReturnEligibility.execute(
       { orderId: state.orderId, issue: "quality" },
       { requestContext },
     );
+    // P4：客服可自主补偿 ≤ 50 黑龙币；超出的退款必须主管点头
+    const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
+    const needsApproval = verdict.decision === "refund" && price > 50;
     await setState({ decision: verdict.decision, reason: verdict.reason });
-    return { decision: verdict.decision, reason: verdict.reason };
+    return {
+      decision: verdict.decision,
+      reason: verdict.reason,
+      needsApproval,
+    };
   },
 });
 
-// ④ 人工审批：退款类判定要主管点头，其余直接过
+// ④ 人工审批：只有 judge 标了 needsApproval 的单才会走到这里（由下面的 .branch 分路）
 const approval = createStep({
   id: "approval",
-  description: "需要人工拍板的判定在这里挂起，等批准或驳回",
-  inputSchema: z.object({ decision: z.string(), reason: z.string() }),
-  outputSchema: z.object({ approved: z.boolean() }),
+  description: "金额超出客服权限的退款：挂起等主管批准或驳回",
+  inputSchema: z.object({
+    decision: z.string(),
+    reason: z.string(),
+    needsApproval: z.boolean(),
+  }),
+  outputSchema: z.object({ decision: z.string(), reason: z.string() }),
   stateSchema,
   // 恢复时外部要传什么
   resumeSchema: z.object({ approved: z.boolean(), note: z.string().optional() }),
   // 挂起时把要给人看的信息一起存下来
   suspendSchema: z.object({ orderId: z.string().optional(), reason: z.string() }),
   execute: async ({ inputData, resumeData, state, suspend, setState }) => {
-    if (inputData.decision !== "refund") return { approved: true };
-    // P4：客服可自主补偿 ≤ 50 黑龙币，超出必须主管审批
-    const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
-    if (price <= 50) return { approved: true };
     // 第一次执行：挂起，等主管
     if (!resumeData) {
+      const price = orders.find((item) => item.orderId === state.orderId)?.price ?? 0;
       return await suspend({
         orderId: state.orderId,
         reason: inputData.reason + "（退款金额 " + price + " 黑龙币，超出 P4 的 50）",
       });
     }
     // 被 resume 之后才走到这里
-    await setState({
-      decision: resumeData.approved ? "refund-approved" : "handover",
-    });
-    return { approved: resumeData.approved };
+    const decision = resumeData.approved ? "refund-approved" : "handover";
+    await setState({ decision });
+    return { decision, reason: resumeData.note ?? inputData.reason };
   },
 });
 
+// 分支的另一条路：客服权限内的判定直接放行 —— 两条路的输入输出 schema 必须一致
+const autoPass = createStep({
+  id: "auto-pass",
+  description: "客服权限内的判定：直接放行，不打扰主管",
+  inputSchema: z.object({
+    decision: z.string(),
+    reason: z.string(),
+    needsApproval: z.boolean(),
+  }),
+  outputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  execute: async ({ inputData }) => ({
+    decision: inputData.decision,
+    reason: inputData.reason,
+  }),
+});
+
 // ⑤ 回复：把状态里的事实交给模型组织成人话
+// ⑤ 回复：分支只跑一条，产物按步骤名分组（approval / auto-pass），所以两个字段都声明成可选
+//    具体说什么看 state —— judge 与 approval 都已经把结论写进去了
 const reply = createStep({
   id: "reply",
   description: "用客户听得懂的话说明结果",
-  inputSchema: z.object({ decision: z.string(), reason: z.string() }),
+  inputSchema: z.object({
+    approval: z.object({ decision: z.string(), reason: z.string() }).optional(),
+    "auto-pass": z.object({ decision: z.string(), reason: z.string() }).optional(),
+  }),
   outputSchema: z.object({ answer: z.string() }),
   stateSchema,
-  execute: async ({ inputData, state, mastra }) => {
+  execute: async ({ state, mastra }) => {
     const agent = mastra?.getAgent("support-agent");
     const prompt =
       "把下面这条判定结果转达给客户：简短、专业、不要新增承诺。\\n" +
-      "判定：" + inputData.decision + "\\n依据：" + inputData.reason +
+      "判定：" + (state.decision ?? "") + "\\n依据：" + (state.reason ?? "") +
       "\\n当前状态：" + JSON.stringify(state);
     const res = await agent?.generate(prompt);
-    return { answer: res?.text ?? inputData.reason };
+    return { answer: res?.text ?? state.reason ?? "" };
   },
 });
 
@@ -1918,7 +1951,11 @@ export const afterSalesWorkflow = createWorkflow({
   .then(classify)
   .then(lookupOrder)
   .then(judge)
-  .then(approval)
+  // ④ 分路：要主管拍板的走审批（里面挂起），其余的走 autoPass
+  .branch([
+    [async ({ inputData }) => inputData.needsApproval, approval],
+    [async ({ inputData }) => !inputData.needsApproval, autoPass],
+  ])
   .then(reply)
   .commit();
 
@@ -1942,13 +1979,14 @@ export async function approveRun(runId: string, approved: boolean) {
       label: "看两个工作流",
       description: [
         "打开 http://localhost:4111/workflows，能看到 after-sales 与 daily-check 两个工作流",
-        "这是一个会重试、会兜底、会定时自跑的客服工作流：步骤失败按配置重试，每天 9 点自动跑一次订单巡检",
+        "这是一个会重试、会兜底、会定时自跑的客服工作流：步骤失败按配置重试；每天 9 点自动巡检一次，每单单独生成一条提醒",
       ],
     },
     concepts: [
       "retryConfig — 工作流级重试：{ attempts, delay } 对所有步骤生效",
       "retries — 步骤级重试次数，写在 createStep 里，会覆盖工作流级的配置",
       "options.onError — 只在最终失败时调用：拿得到 error、status（failed / tripwire）与各步骤结果，适合统一发告警",
+      ".foreach — 对数组里每一项跑同一个步骤：前一步的输出必须是数组，步骤收到的是单个元素，跑完又拼回数组（后面接汇总步骤）",
       "schedule — 在 createWorkflow 里写 { cron, timezone, inputData }，Mastra 启动时自动接管；同一个工作流照样能被手动运行",
       "Background Tasks — 跑很久的任务不想占着请求就丢到后台执行（本课不展开，链接在右侧）",
     ],
@@ -1981,7 +2019,10 @@ const afterSalesWorkflow = createWorkflow({
   .then(classify)
   .then(lookupOrder)
   .then(judge)
-  .then(approval)
+  .branch([
+    [async ({ inputData }) => inputData.needsApproval, approval],
+    [async ({ inputData }) => !inputData.needsApproval, autoPass],
+  ])
   .then(reply)
   .commit();
 
@@ -1998,43 +2039,60 @@ const lookupOrder = createStep({
         path: "src/mastra/workflows/daily-check.ts",
         order: 2,
         action: "create",
-        hint: "新建一个定时工作流：每天 9 点自动扫一遍订单",
+        hint: "新建一个定时工作流：每天 9 点自动巡检，扫出快到窗口的订单后逐单生成提醒，最后汇总",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { orders } from "../data/orders";
 
-// 巡检：挑出快到 7 天 / 15 天售后窗口的订单
+// 第一步：扫一遍订单，挑出快到 7 天 / 15 天售后窗口的
+// 输出故意做成数组 —— 下一步的 .foreach 要遍历它
 const scan = createStep({
   id: "scan",
   description: "扫一遍订单，挑出快到售后窗口的",
   inputSchema: z.object({}),
-  outputSchema: z.object({ todo: z.array(z.string()) }),
-  execute: async () => {
-    const todo = orders
+  outputSchema: z.array(
+    z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
+  ),
+  execute: async () =>
+    orders
       .filter(
         (item) =>
           item.deliveredDaysAgo !== null &&
           item.deliveredDaysAgo >= 5 &&
           item.deliveredDaysAgo <= 15,
       )
-      .map(
-        (item) =>
-          item.orderId + " " + item.sku + " 已签收 " + item.deliveredDaysAgo + " 天",
-      );
-    return { todo };
-  },
+      .map((item) => ({
+        orderId: item.orderId,
+        sku: item.sku,
+        days: item.deliveredDaysAgo ?? 0,
+      })),
 });
 
+// 每次只处理一单：.foreach 把上面的数组拆开，逐个喂给这个步骤
+const remind = createStep({
+  id: "remind",
+  description: "为一单生成一条待跟进提醒",
+  inputSchema: z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
+  outputSchema: z.object({ text: z.string() }),
+  execute: async ({ inputData }) => ({
+    text: inputData.orderId + " " + inputData.sku + " 已签收 " + inputData.days + " 天",
+  }),
+});
+
+// 汇总：.foreach 的产物又是数组，所以这一步收数组
 const collect = createStep({
   id: "collect",
   description: "把待跟进清单整理成一行摘要",
-  inputSchema: z.object({ todo: z.array(z.string()) }),
+  inputSchema: z.array(z.object({ text: z.string() })),
   outputSchema: z.object({ count: z.number(), summary: z.string() }),
   execute: async ({ inputData }) => {
-    const count = inputData.todo.length;
+    const count = inputData.length;
     return {
       count,
-      summary: count === 0 ? "今天没有快到窗口的订单" : inputData.todo.join("；"),
+      summary:
+        count === 0
+          ? "今天没有快到窗口的订单"
+          : inputData.map((item) => item.text).join("；"),
     };
   },
 });
@@ -2051,6 +2109,7 @@ export const dailyCheckWorkflow = createWorkflow({
   },
 })
   .then(scan)
+  .foreach(remind)
   .then(collect)
   .commit();
 `,

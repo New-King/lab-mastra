@@ -14,7 +14,7 @@
 | | Processors | 第 13 课 |
 | | Code Mode | 进阶 A5 |
 | **Build / Workflows** | Workflow State | 第 7 课 |
-| | Control Flow | 第 7 课 |
+| | Control Flow | 第 7 课（`.then()`）、第 8 课（`.branch()`）、第 9 课（`.foreach()`） |
 | | Agents and Tools | 第 7 课 |
 | | Snapshots | 第 8 课 |
 | | Suspend and Resume | 第 8 课 |
