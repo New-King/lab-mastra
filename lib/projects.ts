@@ -568,13 +568,7 @@ export const findOrders = createTool({
     ),
     hint: z.string().optional().describe("没匹配上时的提示（可用商品名有哪些）"),
   }),
-  execute: async ({ sku }) => queryOrders({ sku }),
-});
-
-// 查订单的业务逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
-export function queryOrders(input: { sku?: string }) {
-  const { sku } = input;
-
+  execute: async ({ sku }) => {
     const keyword = sku ? normalizeSku(sku) : "";
     const matched = orders.filter((item) => {
       if (!keyword) return true;
@@ -597,8 +591,8 @@ export function queryOrders(input: { sku?: string }) {
           }
         : {}),
     };
-}
-
+  },
+});
 `,
       },
       {
@@ -638,16 +632,7 @@ export const checkReturnEligibility = createTool({
   }),
   outputSchema,
   // execute 只有这一种签名：(input, context)；用不到上下文时可省略第二个参数
-  execute: async ({ orderId, issue }) => judgeReturn({ orderId, issue }),
-});
-
-// 判定逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
-export function judgeReturn(input: {
-  orderId: string;
-  issue: "unopened" | "quality" | "other";
-}): Verdict {
-  const { orderId, issue } = input;
-
+  execute: async ({ orderId, issue }): Promise<Verdict> => {
     // 天数与条款是确定性的事，交给代码；模型只负责把客户的话归成 issue
     const matched = orders.find((item) => item.orderId === orderId);
     // 教学兜底：订单号没匹配上时，优先按客户说的商品挑示例订单，其次才退回第一条
@@ -734,8 +719,8 @@ export function judgeReturn(input: {
       decision: "reject",
       reason: note + "签收 " + days + " 天，已超出 P3 的一年保修期：只能付费修复",
     };
-}
-
+  },
+});
 `,
       },
       {
@@ -1616,8 +1601,232 @@ function SendButton({
     ],
     files: [
       {
-        path: "src/mastra/workflows/after-sales.ts",
+        path: "src/mastra/tools/lookup-tool.ts",
         order: 1,
+        action: "replace",
+        hint: "把查订单的逻辑抽成导出的普通函数 queryOrders，工具照旧调用它 —— 工作流里要直接用这段逻辑",
+        code: `import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { orders } from "../data/orders";
+import { products } from "../data/products";
+
+// 查在售清单：客户说不清是哪件商品、或只问商品政策时用它
+export const listProducts = createTool({
+  id: "list-products",
+  description:
+    "列出在售商品清单（名称 / 价格 / 类别 / 售后规则 / 是否可修复）。用途：① 客户说的是简称（「我的刀」）时，用它对上最接近的那一件；② 客户只问某件商品的政策（能不能退 / 换 / 修）时，按清单里的 rule 回答，不必查订单。客户说的商品不在这份清单里，就是不在售",
+  // 没有入参也要给一个空对象 schema
+  inputSchema: z.object({}),
+  outputSchema: z.object({
+    products: z.array(
+      z.object({
+        sku: z.string(),
+        price: z.number(),
+        category: z.string(),
+        repairable: z.boolean(),
+        rule: z.string(),
+      }),
+    ),
+  }),
+  execute: async () => ({ products }),
+});
+
+// 查订单：客户不记得订单号时用它 —— 不要让客户去背订单号
+// 商品名按「包含」匹配（去掉空格、忽略大小写），所以「刀」「飞刀」「S 级飞刀」都能命中同一件商品
+const normalizeSku = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+
+export const findOrders = createTool({
+  id: "find-orders",
+  description:
+    "查询订单（可按商品名筛选，商品名不确定就留空），返回候选订单（订单号 / 商品 / 签收天数 / 物流）。查到一条直接调 checkReturnEligibility 判定；多条说不清时才复述让客户确认",
+  inputSchema: z.object({
+    sku: z.string().optional().describe("商品名，例如 生命之水；不确定就留空"),
+  }),
+  outputSchema: z.object({
+    orders: z.array(
+      z.object({
+        orderId: z.string(),
+        customer: z.string(),
+        sku: z.string(),
+        deliveredDaysAgo: z.number().nullable(),
+        logistics: z.string(),
+      }),
+    ),
+    hint: z.string().optional().describe("没匹配上时的提示（可用商品名有哪些）"),
+  }),
+  execute: async ({ sku }) => queryOrders({ sku }),
+});
+
+// 查订单的业务逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
+export function queryOrders(input: { sku?: string }) {
+  const { sku } = input;
+
+    const keyword = sku ? normalizeSku(sku) : "";
+    const matched = orders.filter((item) => {
+      if (!keyword) return true;
+      const name = normalizeSku(item.sku);
+      return name.includes(keyword) || keyword.includes(name);
+    });
+
+    return {
+      orders: matched.map((item) => ({
+        orderId: item.orderId,
+        customer: item.customer,
+        sku: item.sku,
+        deliveredDaysAgo: item.deliveredDaysAgo,
+        logistics: item.logistics,
+      })),
+      // 没匹配上时把在售商品报给它，免得它换着关键字一个个试
+      ...(keyword && matched.length === 0
+        ? {
+            hint: \`没有匹配「\${sku}」的订单；在售商品只有：\${[...new Set(orders.map((item) => item.sku))].join(" / ")}\`,
+          }
+        : {}),
+    };
+}
+
+`,
+      },
+      {
+        path: "src/mastra/tools/return-tool.ts",
+        order: 2,
+        action: "replace",
+        hint: "同样把判定逻辑抽成导出的 judgeReturn，工具照旧调用它",
+        code: `import { createTool } from "@mastra/core/tools";
+import { z } from "zod";
+import { orders } from "../data/orders";
+import { products } from "../data/products";
+
+// outputSchema：返回值也约束住，后面拿到的是结构化数据
+const outputSchema = z.object({
+  orderId: z.string(),
+  sku: z.string(),
+  daysSinceDelivery: z.number().optional(),
+  decision: z.enum(["refund", "exchange", "repair", "reject", "pending"]),
+  reason: z.string(),
+});
+
+// 判定结果的类型：execute 显式声明返回它，否则字面量会被放宽成 string、跟 schema 对不上
+type Verdict = z.infer<typeof outputSchema>;
+
+// 工具必须用 createTool 定义（用裸对象写不会被执行）
+export const checkReturnEligibility = createTool({
+  id: "check-return-eligibility",
+  description:
+    "按售后政策判断订单里的商品能否退货、换新或修复：P1 签收 7 天内封禁未启可退；P2 签收 15 天内质量问题可换；P3 一年保修期内可修（耗材不适用修复）",
+  // inputSchema：模型要填的参数，用 zod 约束，并写 describe 帮模型填对
+  inputSchema: z.object({
+    orderId: z.string().describe("订单号，例如 NX-1002 —— 正常流程里由 findOrders 查到并确认后再传"),
+    issue: z
+      .enum(["unopened", "quality", "other"])
+      .default("quality")
+      .describe("问题类型：unopened 未拆封、quality 坏了 / 故障、other 其他；客户说「坏了」就按 quality"),
+  }),
+  outputSchema,
+  // execute 只有这一种签名：(input, context)；用不到上下文时可省略第二个参数
+  execute: async ({ orderId, issue }) => judgeReturn({ orderId, issue }),
+});
+
+// 判定逻辑写成普通函数：工具是给模型用的壳，工作流里直接调它
+export function judgeReturn(input: {
+  orderId: string;
+  issue: "unopened" | "quality" | "other";
+}): Verdict {
+  const { orderId, issue } = input;
+
+    // 天数与条款是确定性的事，交给代码；模型只负责把客户的话归成 issue
+    const matched = orders.find((item) => item.orderId === orderId);
+    // 教学兜底：订单号没匹配上时，优先按客户说的商品挑示例订单，其次才退回第一条
+    // （真实项目里应该返回「查不到」并请客户核对订单号）
+    // 教学兜底：订单号对不上就拿示例订单演示，方便反复试
+    // （真实项目里应该返回「查不到」并请客户核对）
+    const order = matched ?? orders[1];
+    // 商品类别也来自清单：耗材不适用 P2 换新
+    const product = products.find((item) => item.sku === order.sku);
+    const note = matched
+      ? ""
+      : "（未匹配到该订单号，先按示例订单 " + order.orderId + " 演示）";
+    if (order.deliveredDaysAgo === null) {
+      return {
+        orderId: order.orderId,
+        sku: order.sku,
+        decision: "pending",
+        reason:
+          note +
+          "该订单还没签收（物流：" +
+          order.logistics +
+          "，已停留 " +
+          order.logisticsStuckDays +
+          " 天），先查运输进度再谈售后",
+      };
+    }
+    // 数据里存的就是「签收距今天数」，判定不依赖系统时间，结果永远可复现
+    const days = order.deliveredDaysAgo;
+    if (issue === "unopened" && days <= 7) {
+      return {
+        orderId: order.orderId,
+        sku: order.sku,
+        daysSinceDelivery: days,
+        decision: "refund",
+        reason: note + "签收 " + days + " 天、封禁未启，符合 P1：全额退款，星际运费由商家承担",
+      };
+    }
+    if (issue === "unopened") {
+      // 过了 7 天：无理由退货窗口关闭，但没拆封不等于不能处理质量问题
+      return {
+        orderId: order.orderId,
+        sku: order.sku,
+        daysSinceDelivery: days,
+        decision: "reject",
+        reason:
+          note +
+          "签收 " + days + " 天，已过 P1 的 7 天无理由窗口，未拆封也不能退；如有质量问题请提供故障记录，我再按 P2 / P3 处理",
+      };
+    }
+    if (issue === "quality" && days <= 15) {
+      return {
+        orderId: order.orderId,
+        sku: order.sku,
+        daysSinceDelivery: days,
+        decision: "exchange",
+        reason: note + "签收 " + days + " 天、质量问题，符合 P2：免费换新（需提供故障记录）",
+      };
+    }
+    if (days <= 365) {
+      if (product && !product.repairable) {
+        // 耗材：换新窗口（15 天）已过，又没有维修价值
+        return {
+          orderId: order.orderId,
+          sku: order.sku,
+          daysSinceDelivery: days,
+          decision: "reject",
+          reason:
+            note +
+            "签收 " + days + " 天：" + order.sku + " 属耗材，无维修价值、无法修复；质量问题可在签收 15 天内换新，未拆封可在 7 天内退货",
+        };
+      }
+      return {
+        orderId: order.orderId,
+        sku: order.sku,
+        daysSinceDelivery: days,
+        decision: "repair",
+        reason: note + "签收 " + days + " 天，已过 7 / 15 天窗口，但在 P3 一年保修期内：非人为损坏免费修复",
+      };
+    }
+    return {
+      orderId: order.orderId,
+      sku: order.sku,
+      daysSinceDelivery: days,
+      decision: "reject",
+      reason: note + "签收 " + days + " 天，已超出 P3 的一年保修期：只能付费修复",
+    };
+}
+
+`,
+      },
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 3,
         action: "create",
         hint: "把一次售后处理做成工作流（脚手架自带的 weather-workflow.ts 保持不动）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -1735,7 +1944,7 @@ export const afterSalesWorkflow = createWorkflow({
       },
       {
         path: "src/mastra/index.ts",
-        order: 2,
+        order: 4,
         action: "edit",
         hint: "只加两处：import 与 workflows 里的一项，其余配置不动",
         code: `// ① 顶部加一行 import

@@ -48,7 +48,8 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 | 4 | — | agent 的 memory（加 `workingMemory` + schema） |
 | 5 | 依赖 `@ai-sdk/openai-compatible@^2`（嵌入走硅基流动） | agent 的 memory（`semanticRecall` + `vector` + `messageHistory` 预算） |
 | 6 | `app/api/generate/route.ts`（`handleChatStream`）+ 复用 lab-ai-sdk 第 4 课的 `app/page.tsx`；首次装 `@mastra/ai-sdk` / `@ai-sdk/react` / `ai` | 覆盖脚手架 `app/page.tsx`；`index.ts` 的 storage `url` 改绝对路径 |
-| 7–9 | `src/mastra/workflows/*.ts` | agent / `index.ts` |
+| 7 | `src/mastra/workflows/after-sales.ts`；覆盖 `src/mastra/tools/*.ts`（把业务逻辑抽成导出函数，工作流直接调用） | `index.ts`（注册工作流） |
+| 8–9 | `src/mastra/workflows/*.ts` | `index.ts` |
 | 10 | `src/mastra/knowledge/*.ts` | 检索工具注册 |
 | 11–12 | `src/mastra/evals/*.ts`、observability 配置 | `index.ts` |
 | 13–14 | — | `index.ts`（storage / auth / 部署配置） |
