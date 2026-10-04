@@ -924,7 +924,7 @@ export const supportAgent = new Agent({
       label: "打开页面验证",
       description: [
         "打开 http://localhost:3000，聊一句「我的刀能退吗」",
-        "能看到思考块、工具卡（入参 / 结果）和 markdown 表格；刷新页面历史还在",
+        "流式过程中能看到思考块、工具卡（入参 / 结果）与 markdown 表格；刷新页面历史还在",
         "这是一个接在自定义前端上的客服 agent，不依赖 Studio",
       ],
     },
@@ -935,7 +935,8 @@ export const supportAgent = new Agent({
       "getMemory / recall — 从 agent 拿到 memory，按对话 id + 客户 id 读回历史消息",
       "version — handleChatStream 与 toAISdkMessages 要和你装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）",
       "前端怎么接 — AI SDK 的 useChat：用 DefaultChatTransport 指定 api（/api/generate）和 body（chatId），POST 发消息、GET 水合历史、DELETE 清空；后端换成 Mastra 后这套协议不用改",
-      "UIMessage.parts — 一条消息是 part 数组：text（正文）、reasoning（思考）、tool-xxx（工具调用与结果）、step-start（分步）；模型的过程都在流里，渲不渲染由前端决定",
+      "UIMessage.parts — 一条消息是 part 数组：text（正文）、reasoning（思考）、tool-xxx（工具调用与结果）、step-start（分步）；渲不渲染由前端决定",
+      "sendReasoning — handleChatStream 的选项，默认 false（思考不进流）；传 true 才会把思考随流发给前端",
       "前端渲染 — 正文用 react-markdown + remark-gfm 渲染（表格靠 remark-gfm）；思考和工具各做成可折叠块，工具卡展示入参 / 结果",
     ],
     docLinks: [
@@ -979,6 +980,8 @@ export async function POST(req: Request) {
     agentId: "support-agent",
     // 与安装的 AI SDK 大版本对齐（官方 Next.js 指南写的是 v7）
     version: "v7",
+    // 默认 false：思考不进流
+    sendReasoning: true,
     params: {
       ...params,
       // 页面带来的 chatId 当会话 id

@@ -66,6 +66,7 @@ createTool — 定义 agent 可调用的工具：id、description、inputSchema�
 - 依赖只加课程真需要的包：`@mastra/core`、`@mastra/ai-sdk`、`zod`。第 5 课为语义召回加 `@ai-sdk/openai-compatible@^2`（嵌入走云：硅基流动 `BAAI/bge-large-zh-v1.5`；对话模型仍统一 DeepSeek，只是 DeepSeek 没有嵌入模型）；第 6 课接 lab-ai-sdk 前端时才装 `@mastra/ai-sdk` + `@ai-sdk/react` + `ai`；**不装官方 Next.js 指南里推荐的 `ai-elements`**（前端用我们自己的）。
 - 示例代码写**中文注释**讲关键行为；知识点列表只列名称，注释解释用法。
 - **跟做步骤的文案照 `lab-ai-sdk` 的写法**：一句话、动词开头、只说做什么；`choices` 用「项 → 取值」。理由、取舍、背景**不写进步骤说明**（放知识点、延伸阅读或仓库文档）。
+- **课页不写调试过程**：修 bug 的心得、「已实测」记录、例外情况的排查步骤都不进课页（含知识点与验收）；课页只写「怎么做」。必要的一句最多进 `docs/`。
 - 课的 `agentPrompt` 必须**显式给出项目路径占位符**（如 `[路径名]`），并要求 agent 在位置不明确时先问用户 —— 不能依赖 agent 的当前工作目录（它可能正是课程站点仓库，会把项目建进去）。
 - 工具必须用 `createTool()`（不要用裸对象），`execute` 签名是 `execute(input, context)`。
 - **导入用项目根的 `@/*` 别名**（`create-next-app` 默认就配了）：课里不要出现 `../../../src/mastra` 这类多级相对路径；同理不要传 `create-next-app` 不存在的参数（实测只有 `--react-compiler` / `--import-alias <prefix/*>` 这类正向开关）。

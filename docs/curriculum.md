@@ -148,7 +148,8 @@
 - **要实现三个方法**：`POST`（流式回复）／`GET`（`memory.recall` + `toAISdkMessages` 返回页面要的 `{ messages }`）／`DELETE`（`memory.deleteThread(chatId)` 支撑页面的「清空」按钮）
 - **agentId**：`support-agent`；`memory.thread` 用页面带来的 `chatId`，`memory.resource` 固定成一个客户 id（多客户时换成真实客户 id，就是记忆的隔离边界）
 - **官方坑（可选，不影响网页）**：Studio 与 `next dev` 并行时，`src/mastra/index.ts` 里 storage 的 `url` 用相对路径会各建一个 `mastra.db`（相对路径按各进程工作目录解析）—— 后果只是「Studio 里看不到网页那条对话」。想让 Studio 看到同一批数据：`url` 写绝对路径，或放进 `.env`（`TURSO_DATABASE_URL=file:/你的路径/mastra.db`），重启两个进程
-- **验收**：`localhost:3000` 上能聊、流式输出、工具照常调用、刷新后历史还在；界面上能看到思考块、工具卡（入参 / 结果）与 markdown 表格
+- **验收**：`localhost:3000` 上能聊、流式输出、工具照常调用、刷新后历史还在；流式过程中能看到思考块、工具卡（入参 / 结果）与 markdown 表格
+- **`sendReasoning`**：`handleChatStream` 默认 false（思考不进流），课里的 route 传了 `true`
 - **待验证**：`version: "v7"` 要与安装的 `ai` 大版本一致（官方指南写 v7）；`chatId` 透传进 `handleChatStream` 的 `params` 是否被接受；`memory.deleteThread` 签名已按 `@mastra/core/dist/memory/memory.d.ts`（`abstract deleteThread(threadId: string)`）核对，未实跑
 - **文档**：`/guides/getting-started/next-js`、`/integrations/agentic-ui/ai-sdk-ui`、`/reference/memory/recall`、AI SDK 的 `useChat`
 
