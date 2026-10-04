@@ -1148,7 +1148,6 @@ function ReasoningBlock({ text, streaming }: { text: string; streaming: boolean 
     <Collapsible
       icon={<IconThinking className="size-[18px]" />}
       title="思考"
-      defaultOpen
       hint={streaming ? <span className="text-xs text-zinc-300">思考中…</span> : undefined}
     >
       <p className="whitespace-pre-wrap pl-6 text-[15px] leading-7 text-zinc-600">{text}</p>
