@@ -2922,12 +2922,19 @@ export default function KnowledgePage() {
         hint: "两个确定性打分器：有没有引用条款、有没有越权承诺",
         code: `import { createScorer } from "@mastra/core/evals";
 
+// agent.generate() 返回的是对象，正文在 .text 里；兼容直接给字符串的情况
+function outputText(run: { output?: unknown }): string {
+  const out = run.output as any;
+  if (typeof out === "string") return out;
+  return out?.text ?? JSON.stringify(out ?? "");
+}
+
 // ① 确定性 scorer：不调模型，只看回答里有没有引用条款编号（P1–P6）
 export const citesPolicyScorer = createScorer({
   id: "cites-policy",
   description: "回答是否引用了售后政策条款编号",
 })
-  .analyze(({ run }) => ({ cited: /P[1-6]/.test(run.output ?? "") }))
+  .analyze(({ run }) => ({ cited: /P[1-6]/.test(outputText(run)) }))
   .generateScore(({ results }) => (results.analyzeStepResult.cited ? 1 : 0));
 
 // ② 确定性 scorer：有没有超出政策的承诺（客服最容易犯的错）
@@ -2935,9 +2942,8 @@ export const noOverPromiseScorer = createScorer({
   id: "no-over-promise",
   description: "回答里有没有「保证 / 一定能」这类越权承诺",
 })
-  .analyze(({ run }) => ({ over: /保证|一定能|肯定能/.test(run.output ?? "") }))
-  .generateScore(({ results }) => (results.analyzeStepResult.over ? 0 : 1));
-`,
+  .analyze(({ run }) => ({ over: /保证|一定能|肯定能/.test(outputText(run)) }))
+  .generateScore(({ results }) => (results.analyzeStepResult.over ? 0 : 1));`,
       },
       {
         path: "src/mastra/evals/cases.ts",
@@ -2960,28 +2966,45 @@ export const evalCases = [
         action: "create",
         hint: "跑一遍并把结果变成退出码（CI 用同一条命令）",
         code: `import { runEvals } from "@mastra/core/evals";
+import { Mastra } from "@mastra/core/mastra";
+import { LibSQLStore, LibSQLVector } from "@mastra/libsql";
 import { supportAgent } from "../agents/support-agent";
 import { evalCases } from "./cases";
 import { citesPolicyScorer, noOverPromiseScorer } from "./scorers";
+import { DB_URL } from "../db";
 
-// 跑一遍案例集：每个案例问一次 agent，再用两个 scorer 打分
-const result = await runEvals({
-  target: supportAgent,
-  data: evalCases,
-  // gates 必须全部 1.0，否则这次评测直接失败（越权承诺是红线）
-  gates: [noOverPromiseScorer],
-  // 普通 scorer 可以设阈值：低于阈值 verdict 会变成 scored
-  scorers: [{ scorer: citesPolicyScorer, threshold: 0.6 }],
+// 独立运行时没有 index.ts 里那个 Mastra 实例：agent 的记忆拿不到存储、打分结果也无处落库。
+// 这里建一个挂了 storage 和 scorers 的最小实例、从它手里取 agent —— 与实例注入是同一机制。
+const mastra = new Mastra({
+  agents: { supportAgent },
+  scorers: { citesPolicyScorer, noOverPromiseScorer },
+  storage: new LibSQLStore({ id: "mastra-storage", url: DB_URL }),
+  // 检索工具按名字从实例找向量库，这里也要有
+  vectors: { knowledgeBase: new LibSQLVector({ id: "knowledgeBase", url: DB_URL }) },
 });
 
-console.log("verdict:", result.verdict);
-console.log(JSON.stringify(result.scores ?? {}, null, 2));
+// 顶层不能用 await（tsx 会把这个文件按 CommonJS 处理），所以包一层函数
+async function main() {
+  // 跑一遍案例集：每个案例问一次 agent，再用两个 scorer 打分
+  const result = await runEvals({
+    target: mastra.getAgent("supportAgent"),
+    data: evalCases,
+    // gates 必须全部 1.0，否则这次评测直接失败（越权承诺是红线）
+    gates: [noOverPromiseScorer],
+    // 普通 scorer 可以设阈值：低于阈值 verdict 会变成 scored
+    scorers: [{ scorer: citesPolicyScorer, threshold: 0.6 }],
+  });
 
-// 门禁：不是 passed 就以失败退出，CI 里就是一条红线
-if (result.verdict !== "passed") {
-  process.exit(1);
+  console.log("verdict:", result.verdict);
+  console.log(JSON.stringify(result.scores ?? {}, null, 2));
+
+  // 门禁：不是 passed 就以失败退出，CI 里就是一条红线
+  if (result.verdict !== "passed") {
+    process.exit(1);
+  }
 }
-`,
+
+main();`,
       },
     ],
   },
