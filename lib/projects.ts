@@ -2902,11 +2902,11 @@ export default function KnowledgePage() {
       ],
     },
     concepts: [
-      "createScorer — 定义打分器：id、description，再链 .analyze() 与 .generateScore()（来自 @mastra/core/evals）",
-      "确定性 scorer — 全部用函数实现时不调用 judge 模型：成本低、结果稳定、可进 CI，适合「是否引用条款」「是否越权承诺」这类判断",
-      "runEvals — 运行案例集：{ target, data, gates, scorers }，每个案例执行一次 target 后打分",
-      "gates 与阈值 — gates 必须全为 1.0（红线，如越权承诺）；普通 scorer 可设 threshold，低于阈值结果转为 scored",
-      "verdict 与 CI — 结果为 passed / scored / failed；非 passed 时令进程退出码非 0，即 CI 的红线；官方另有 prebuilt scorers（@mastra/evals，使用 judge 模型）",
+      "`runEvals({ target, data, gates, scorers })` — 案例集逐个问一遍 agent 再打分：`gates` 是红线（必须全 1.0），`scorers` 配 `threshold`（平均分达标才算过）",
+      "verdict 三档 — `passed`：红线守住且平均分 ≥ 阈值（退出码 0）；`scored`：没踩红线但分不够；`failed`：踩了红线。CI 就靠退出码拦",
+      "两个 scorer — `cites-policy`：回答里有没有 P1–P6 条款编号（有 1 分、没有 0 分，案例取平均）；`no-over-promise`：出现「保证 / 一定能」直接判 0",
+      "`run.output` 是 `agent.generate()` 的完整对象，正文在 `.text` 里 —— 拿整个对象去正则永远匹配不上（实测踩过的坑，0 分的根因）",
+      "什么时候跑 — 改提示词 / 换模型 / 改政策之后跑一遍，平时不碰；CI 每次提交自动跑，`passed` 放行、其余拦下",
     ],
     docLinks: [
       { title: "Evals 总览", href: "https://mastra.ai/docs/evals/overview" },
