@@ -2463,17 +2463,17 @@ export async function approveRun(runId: string, approved: boolean) {
     verify: {
       label: "点按钮入库，再问政策",
       description: [
-        "打开 http://localhost:3001/knowledge —— 页面会告诉你现在有没有入库；没入库就点「初始化知识库」，几秒后显示「已入库：7 个块（1024 维）」",
+        "打开 http://localhost:3001/knowledge —— 页面会告诉你现在有没有入库；没入库就点「初始化知识库」，一两秒后显示「已入库：7 个块（1024 维）」",
         "然后回聊天页问「S 级飞刀用了四年、梭体核心坏了怎么办」：agent 先检索政策原文，回答里说清依据哪一条",
-        "改了 src/mastra/knowledge/policies.ts（政策原文）就回这个页面点一次「重建知识库」—— 入库 = 先删旧索引再写，重复点不会堆重复段落",
+        "改了 src/mastra/knowledge/policies.md（那份政策文档）就回这个页面点一次「重建知识库」—— 入库 = 先删旧索引再写，重复点不会堆重复段落",
         "注意：浏览器直接打开 /api/knowledge/ingest 只会看到状态（GET），入库是页面按钮发的 POST",
       ],
     },
     concepts: [
       "MDocument — 装载原文：MDocument.fromText(...)，另有 fromMarkdown / fromHTML / fromJSON",
-      "chunk — 切块参数 { strategy, maxSize, overlap, separators }；块过大检索粗、过小丢上下文",
+      "chunk — 切块参数。一份结构化文档按标题切：strategy: \"markdown\" + headers，stripHeaders: false 保住标题 —— 一个条款一块，检索回来才知道依据哪一条；按字数硬切会把几条政策挤在一块",
       "embedMany — 批量向量化（ai 包）：embedMany({ model, values }) → { embeddings }；维度必须与建索引时一致",
-      "createIndex / upsert — 先建索引（indexName、dimension、metric）再写入向量；metadata 携带条款号以便给出来源",
+      "createIndex / upsert — 先建索引（indexName、dimension、metric）再写入向量；metadata 要带**正文**（text）：检索返回的就是 metadata 里的字段，只存文件名的话模型拿到的是空内容",
       "upsert 是追加不是覆盖 — 重复入库会把同一个块堆很多份；所以入库前先 deleteIndex，让「重跑一次」等于「重建索引」",
       "createVectorQueryTool — 将检索封装为工具交给 agent：{ vectorStoreName, indexName, model }；vectorStoreName 需在 Mastra 实例的 vectors 中注册",
       "入库入口放应用侧 — 用自己应用的页面/接口触发（/knowledge 页面上的按钮，或 POST /api/knowledge/ingest），不要靠 Studio 手动跑：入库与检索必须在同一个进程、同一个库，否则查询不报错但永远为空",
@@ -2486,60 +2486,62 @@ export async function approveRun(runId: string, approved: boolean) {
     ],
     files: [
       {
-        path: "src/mastra/knowledge/policies.ts",
+        path: "src/mastra/knowledge/config.ts",
         order: 1,
         action: "create",
-        hint: "政策原文 —— 检索的唯一事实来源（对应 docs/scenario.md 的 P1–P6）",
-        code: `// 售后政策原文：这是唯一的事实来源，检索工具只会引用它
-// （条款必须可判定：时间窗口 + 条件 + 责任方，一个字都不能含糊）
-export const policyDocs: { title: string; text: string }[] = [
-  {
-    title: "P1 退货",
-    text: "P1 退货：签收后 7 个自然日内、原厂封禁未启（未拆封、未启用）：全额退款，星际运费由商家承担；超过 7 天不再适用无理由退货。",
-  },
-  {
-    title: "P2 换新",
-    text: "P2 换新：签收后 15 个自然日内出现质量问题（梭体灵纹闪烁、金丝断裂）：免费换新，需要客户提供故障记录。",
-  },
-  {
-    title: "P3 修复",
-    text: "P3 修复：1 年免费修复，梭体核心非人为损坏免费修复；人为损坏（含强行灌注念力）收材料费。",
-  },
-  {
-    title: "P4 补偿",
-    text: "P4 补偿：客服可自主补偿不超过 50 黑龙币；超出部分必须走主管审批。",
-  },
-  {
-    title: "P5 出处",
-    text: "P5 出处：政策解释以售后政策文件为准，客服不得口头加码；不在在售清单内或超出窗口的，一律需要主管确认。",
-  },
-  {
-    title: "P6 超期未拆封",
-    text: "P6 超期未拆封：未拆封但已过 7 天，无理由退货窗口关闭、不能退；如有质量问题再按 P2 / P3 处理。",
-  },
-  {
-    title: "耗材说明",
-    text: "耗材说明：生命之水属于耗材，退货与换新照常适用（P1 / P2），但不适用修复（P3），因为一次性消耗品没有维修价值。",
-  },
-];
+        hint: "语料路径与索引名收在一处：入库与检索必须同一个索引（真实项目里换成上传目录 / 对象存储）",
+        code: `import path from "node:path";
+import { PROJECT_ROOT } from "../db";
+
+// 语料就是一份纯文本文件（真实项目里换成用户上传的文档 / 对象存储 / 知识库接口）
+export const POLICY_FILE = path.join(PROJECT_ROOT, "src", "mastra", "knowledge", "policies.md");
 
 // 向量索引名：入库（ingest-policies）与检索（policy-search）必须用同一个值
-export const POLICY_INDEX = "policies";
-`,
+export const POLICY_INDEX = "policies";`,
+      },
+      {
+        path: "src/mastra/knowledge/policies.md",
+        order: 2,
+        action: "create",
+        hint: "语料就是一份纯文本 / Markdown 文档（真实项目里是用户上传的文档）；## 标题就是条款号",
+        code: `# 虚拟宇宙公司 售后政策
+
+## P1 退货
+签收后 7 个自然日内、原厂封禁未启（未拆封、未启用）：全额退款，星际运费由商家承担；超过 7 天不再适用无理由退货。
+
+## P2 换新
+签收后 15 个自然日内出现质量问题（梭体灵纹闪烁、金丝断裂）：免费换新，需要客户提供故障记录。
+
+## P3 修复
+1 年免费修复，梭体核心非人为损坏免费修复；人为损坏（含强行灌注念力）收材料费。
+
+## P4 补偿
+客服可自主补偿不超过 50 黑龙币；超出部分必须走主管审批。
+
+## P5 出处
+政策解释以售后政策文件为准，客服不得口头加码；不在在售清单内或超出窗口的，一律需要主管确认。
+
+## P6 超期未拆封
+未拆封但已过 7 天，无理由退货窗口关闭、不能退；如有质量问题再按 P2 / P3 处理。
+
+## 耗材说明
+生命之水属于耗材，退货与换新照常适用（P1 / P2），但不适用修复（P3），因为一次性消耗品没有维修价值。`,
       },
       {
         path: "src/mastra/workflows/ingest-policies.ts",
-        order: 2,
+        order: 3,
         action: "create",
-        hint: "入库工作流：切块 → 向量化 → 建索引 → 写入（在 Studio 里跑一次即可）",
+        hint: "入库工作流：读文档 → 按标题切块 → 向量化 → 重建索引写入（从应用侧触发）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { LibSQLVector } from "@mastra/libsql";
 import { MDocument } from "@mastra/rag";
 import { embedMany } from "ai";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { embedder, EMBED_DIM } from "../embedder";
 import { DB_URL } from "../db";
-import { policyDocs, POLICY_INDEX } from "../knowledge/policies";
+import { POLICY_FILE, POLICY_INDEX } from "../knowledge/config";
 
 // 向量和消息存在同一个库文件里（路径来自 src/mastra/db.ts：绝对路径，入库与检索必然同一个库）
 const vectorStore = new LibSQLVector({
@@ -2549,38 +2551,40 @@ const vectorStore = new LibSQLVector({
 
 const ingest = createStep({
   id: "ingest",
-  description: "把政策原文切块、向量化、写入向量库",
+  description: "把政策文档切块、向量化、写入向量库",
   inputSchema: z.object({}),
   outputSchema: z.object({ chunks: z.number() }),
   execute: async () => {
-    // ① 切块：块大小和重叠决定检索粒度
-    const chunks: string[] = [];
-    const metadatas: { title: string }[] = [];
-    for (const doc of policyDocs) {
-      const document = MDocument.fromText(doc.text);
-      const parts = await document.chunk({
-        strategy: "recursive",
-        maxSize: 256,
-        overlap: 32,
-        separators: ["\\n"],
-      });
-      for (const part of parts) {
-        chunks.push(part.text);
-        // metadata 里带上条款号：检索回来才能说清"依据哪一条"
-        metadatas.push({ title: doc.title });
-      }
-    }
+    // ① 读文档：一份纯文本文件（真实项目里换成用户上传的文档 / 对象存储 / 知识库接口）
+    const source = path.basename(POLICY_FILE);
+    const raw = await readFile(POLICY_FILE, "utf8");
 
-    // ② 向量化：模型输出维度必须和建索引时一致
+    // ② 切块：这份文档是带标题的（# 文档名、## 条款），按标题切 —— 每个条款自成一块，
+    //    检索回来就能直接说"依据哪一条"。纯按字数切会把几条政策挤在同一块里，引用就不精确了。
+    const document = MDocument.fromText(raw, { source });
+    const parts = await document.chunk({
+      strategy: "markdown",
+      headers: [
+        ["#", "h1"],
+        ["##", "h2"],
+      ],
+      // 标题留在块里：检索回来时模型才看得到"这是哪一条"（默认会把标题剥掉）
+      stripHeaders: false,
+    });
+
+    const chunks = parts.map((part) => part.text);
+    // 正文写进 metadata：检索回来才有可引用的原文（只存文件名的话，模型看不见内容）
+    const metadatas = chunks.map((text) => ({ source, text }));
+
+    // ③ 向量化：模型输出维度必须和建索引时一致
     const { embeddings } = await embedMany({
       model: embedder,
       values: chunks,
     });
 
-    // ③ 重建索引：先删旧的、再建新的、再写入。
+    // ④ 重建索引：先删旧的、再建新的、再写入。
     //    实测（2026-10-05）：createIndex 对已存在的索引不报错，但 upsert 是**追加** ——
-    //    重复入库会让同一个块堆很多份，topK 里全是重复段落（查一次 7 个块变 49 条）。
-    //    所以入库就按「重建」写：删 → 建 → 写。
+    //    重复入库会让同一个块堆很多份，topK 里全是重复段落。所以入库按「重建」写：删 → 建 → 写。
     await vectorStore.deleteIndex({ indexName: POLICY_INDEX }).catch(() => {
       // 第一次入库时索引还不存在，删失败是正常的
     });
@@ -2609,12 +2613,12 @@ export const ingestPoliciesWorkflow = createWorkflow({
       },
       {
         path: "src/mastra/tools/policy-search.ts",
-        order: 3,
+        order: 4,
         action: "create",
         hint: "把检索包成工具，交给 agent",
         code: `import { createVectorQueryTool } from "@mastra/rag";
 import { embedder } from "../embedder";
-import { POLICY_INDEX } from "../knowledge/policies";
+import { POLICY_INDEX } from "../knowledge/config";
 
 // 把检索包成一个工具：agent 只有遇到政策问题时才会调它
 // vectorStoreName 对应 Mastra 实例里注册的向量库名字（这里是 knowledgeBase）
@@ -2622,12 +2626,11 @@ export const policySearch = createVectorQueryTool({
   vectorStoreName: "knowledgeBase",
   indexName: POLICY_INDEX,
   model: embedder,
-});
-`,
+});`,
       },
       {
         path: "src/mastra/agents/support-agent.ts",
-        order: 4,
+        order: 5,
         action: "replace",
         hint: "把检索工具挂到 agent 上，并在提示词里要求「说清依据哪一条」",
         code: `import { Agent } from "@mastra/core/agent";
@@ -2679,7 +2682,7 @@ export const supportAgent = new Agent({
       },
       {
         path: "src/mastra/index.ts",
-        order: 5,
+        order: 6,
         action: "edit",
         hint: "注册向量库与入库工作流（vectorStoreName 要和这里注册的名字一致）",
         code: `// ① 顶部加 import
@@ -2700,14 +2703,14 @@ workflows: {
       },
       {
         path: "app/api/knowledge/ingest/route.ts",
-        order: 6,
+        order: 7,
         action: "create",
         hint: "入库接口：GET 看状态、POST 触发入库（浏览器直接打开只有 GET，不会入库）；跑在应用进程里，向量落进应用正在用的那个库",
         code: `import { NextResponse } from "next/server";
 import { LibSQLVector } from "@mastra/libsql";
 import { mastra } from "@/src/mastra";
 import { DB_URL } from "@/src/mastra/db";
-import { POLICY_INDEX } from "@/src/mastra/knowledge/policies";
+import { POLICY_INDEX } from "@/src/mastra/knowledge/config";
 
 // GET：看一眼知识库现在什么状态（有没有入库、几个块）。
 // 注意：浏览器直接打开这个地址只会走到这里（GET），**不会**触发入库 —— 入库要 POST。
@@ -2752,7 +2755,7 @@ export async function POST() {
       },
       {
         path: "app/knowledge/page.tsx",
-        order: 7,
+        order: 8,
         action: "create",
         hint: "知识库页：一个按钮就把「初始化 / 重建向量」做完 —— 学员不用会 curl，也不用进 Studio",
         code: `"use client";
@@ -2762,7 +2765,7 @@ import { useEffect, useState } from "react";
 type Status = { ingested: boolean; chunks: number; dimension?: number };
 
 // 知识库页：把「初始化向量」做成一个按钮 —— 学员不用会 curl，也不用去 Studio。
-// 点一下 = POST /api/knowledge/ingest = 把 knowledge/policies.ts 的政策原文
+// 点一下 = POST /api/knowledge/ingest = 读 knowledge/policies.md 这份政策文档
 // 切块 → 向量化 → 写进应用正在用的那个库（重建语义：先删旧索引再写）。
 export default function KnowledgePage() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -2790,7 +2793,7 @@ export default function KnowledgePage() {
       const data = await res.json();
       setMessage(
         data.ok
-          ? \`入库完成：\${data.chunks} 个政策块已写入向量库\`
+          ? \`入库完成：\${data.chunks} 个块写入向量库\`
           : \`入库失败：\${data.error ?? "未知错误"}\`,
       );
       await refresh();
@@ -2839,7 +2842,7 @@ export default function KnowledgePage() {
         <ul className="mt-3 space-y-1 text-[13px] leading-6 text-zinc-500">
           <li>· 入库跑在你自己的应用进程里，所以向量落进应用正在用的那个库（跟对话检索同一个库）</li>
           <li>· 重复点是安全的：入库 = 重建（先删旧索引再写），不会堆出重复段落</li>
-          <li>· 改了 <code className="text-zinc-700">src/mastra/knowledge/policies.ts</code> 就要回来点一次</li>
+          <li>· 改了 <code className="text-zinc-700">src/mastra/knowledge/policies.md</code> 就要回来点一次</li>
         </ul>
       </section>
     </main>

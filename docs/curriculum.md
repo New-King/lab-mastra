@@ -184,11 +184,11 @@
 
 - **目标**：文档入库（chunk + embed + 存向量库）→ 检索工具 → agent 作答时引用来源；**语料就是售后政策原文（P1–P6）**
 - **依赖（新增）**：`pnpm add @mastra/rag` —— `MDocument`（切块）与 `createVectorQueryTool`（检索工具）都在这里；嵌入模型与库路径都复用第 5 课的 `src/mastra/embedder.ts` 与 `src/mastra/db.ts`，不再新增 key
-- **新增文件**：`knowledge/policies.ts`（政策原文 + `POLICY_INDEX`）、`workflows/ingest-policies.ts`、`tools/policy-search.ts`、`app/api/knowledge/ingest/route.ts`（`GET` 看状态、`POST` 触发入库）、`app/knowledge/page.tsx`（知识库页：一个按钮完成初始化 / 重建）；**嵌入模型与库路径都不新建**；覆盖 `agents/support-agent.ts`（挂检索工具）；`index.ts` 注册 `vectors` 与入库工作流
+- **新增文件**：`knowledge/config.ts`（语料路径 + `POLICY_INDEX`）、`knowledge/policies.md`（**一份**政策文档）、`workflows/ingest-policies.ts`、`tools/policy-search.ts`、`app/api/knowledge/ingest/route.ts`（`GET` 看状态、`POST` 触发入库）、`app/knowledge/page.tsx`（知识库页：一个按钮完成初始化 / 重建）；**嵌入模型与库路径都不新建**；覆盖 `agents/support-agent.ts`（挂检索工具）；`index.ts` 注册 `vectors` 与入库工作流
 - **依据（2026-10-02 核对随包文档）**：`MDocument.fromText(...)` → `doc.chunk({ strategy: "recursive", maxSize, overlap, separators })` → `embedMany({ model, values })`（`ai` 包）→ `vectorStore.createIndex({ indexName, dimension, metric })` → `vectorStore.upsert({ indexName, vectors, metadata })`；检索用 `createVectorQueryTool({ vectorStoreName, indexName, model })`，`vectorStoreName` 必须是 Mastra 实例 `vectors` 里注册的名字
-- **入库方式（2026-10-05 改）**：逻辑是工作流 `ingest-policies`，入口放**应用侧** —— 打开 `http://localhost:3000/knowledge` 点按钮，或 `POST /api/knowledge/ingest`；跑在应用进程里，向量就落进应用正在用的那个库（不再靠 Studio 手动跑）；入库 = **重建**（`deleteIndex` → `createIndex` → `upsert`）；metadata 里带条款号，回答才能说清依据
+- **入库方式（2026-10-05 改）**：语料是**一份文档**（`knowledge/policies.md`），按 `##` 标题切（`strategy: "markdown"` + `headers` + `stripHeaders: false`）→ 7 块（P1–P6 + 耗材说明，每块自带条款号）→ `embedMany` → 重建索引写入；入口放**应用侧** —— 打开 `/knowledge` 点按钮，或 `POST /api/knowledge/ingest`（跑在应用进程里，向量落进应用正在用的库）；入库 = **重建**（`deleteIndex` → `createIndex` → `upsert`）
 - **验收**：问「过了 15 天还能换新吗」→ 回答引用 P2 并给出正确结论；问政策里没写的事 → 明确说不知道，不编
-- **实测（2026-10-05）**：`createIndex` 对已存在的索引**不报错**，但 `upsert` 是**追加** —— 重复入库把 7 个块堆成 49 条（检索结果全是重复段落）；改成「`deleteIndex` → `createIndex` → `upsert`」后重跑稳定 7 条；`createVectorQueryTool` 的 `model` 接受 openai-compatible 嵌入模型
+- **实测（2026-10-05）**：① `upsert` 是**追加** —— 重复入库把 7 个块堆成 49 条（检索里全是重复段落），改成「`deleteIndex` → `createIndex` → `upsert`」后重跑稳定 7 条；② 检索返回的正文来自 **metadata**：只写 `{ source }` 时检索回来是空内容（模型只看得见条款号），把 `text` 写进 metadata 才能引用原文；③ `createVectorQueryTool` 的 `model` 接受 openai-compatible 嵌入模型
 - **文档（已核实 200）**：`/reference/rag/overview`、`/reference/rag/chunking-and-embedding`、`/reference/rag/retrieval`、`/reference/rag/vector-databases`
 
 ### 第 10 课 · 评测：把回归测试跑起来
