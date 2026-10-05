@@ -496,7 +496,7 @@ export type Order = {
   deliveredDaysAgo: number | null; // 签收距今多少天；未签收为 null
   logistics: string;
   logisticsStuckDays: number; // 物流在途停留天数
-  address: string; // 收货地址（第 13 课用来讲 PII 脱敏）
+  address: string; // 收货地址（第 12 课用来讲 PII 脱敏）
 };
 
 // 客户只有一个（罗峰先生）：这就是一份共享 mock，谁问都是他这 7 条订单
@@ -2069,12 +2069,16 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       "run.resume({ step, resumeData }) — 从挂起点恢复：step 可传步骤实例或 id；仅传 resumeData 时恢复最近一个挂起点",
       "createRun({ runId }) — 用 runId 取回运行再 resume，因此恢复可发生在任意请求中（HTTP 路由、审批后台）",
       "snapshots / time travel — 每步状态落库：进程重启后仍可从断点续跑，也可回放到某一步重跑以定位问题",
+      "本课没展开的 — 重试与失败兜底（retryConfig / options.onError）、定时与批量（schedule / .foreach）见右侧文档，用得上再看",
     ],
     docLinks: [
       { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
       { title: "Human-in-the-Loop", href: "https://mastra.ai/docs/workflows/human-in-the-loop" },
       { title: "Snapshots", href: "https://mastra.ai/docs/workflows/snapshots" },
       { title: "Time Travel", href: "https://mastra.ai/docs/workflows/time-travel" },
+      { title: "Error Handling（重试与兜底）", href: "https://mastra.ai/docs/workflows/error-handling" },
+      { title: "Scheduled Workflows（定时）", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
+      { title: "Workers（丢到后台进程跑）", href: "https://mastra.ai/docs/deployment/workers" },
     ],
     files: [
       {
@@ -2101,6 +2105,8 @@ const stateSchema = z.object({
   logistics: z.string().optional(),
   decision: z.string().optional(),
   reason: z.string().optional(),
+  // lookup-order 写下的说明：候选里没有符合条件时，说明为什么办不了
+  lookupNote: z.string().optional(),
 });
 
 // ① 分类：语言理解交给模型
@@ -2150,7 +2156,7 @@ const lookupOrder = createStep({
   // 恢复时外部要传什么：客户补充的那句话（一般带着订单号）
   resumeSchema: z.object({ reply: z.string() }),
   // 挂起时把要给人看的信息一起存下来：问什么、候选有哪些
-  // 候选要带够客户判断的信息（商品 + 金额 + 签收天数）—— 否则他只能靠订单号，等于让他去背号
+  // 候选要带够客户判断的信息（商品 + 金额 + 签收天数 + 这单能怎么处理）
   suspendSchema: z.object({
     question: z.string(),
     candidates: z
@@ -2160,6 +2166,8 @@ const lookupOrder = createStep({
           sku: z.string(),
           price: z.number(),
           deliveredDaysAgo: z.number().nullable(),
+          // 这一单按当前诉求能怎么处理：refund 可退 / exchange 可换新 / repair 保修期内可修
+          verdict: z.string(),
         }),
       )
       .optional(),
@@ -2169,45 +2177,83 @@ const lookupOrder = createStep({
     if (inputData.intent === "question") {
       return { intent: inputData.intent, found: false };
     }
-    // 拿客户的话来定单：首次 = 原话，恢复后 = 他补充的那句
+    // 拿客户的话来定单：首次 = 原话，恢复后 = 他补充的那句（补充的话同样可能是商品名）
     const text = resumeData?.reply ?? state.message ?? "";
-    // 报了订单号就以它为准（订单号唯一，客户也常直接报它）；没报再按商品名模糊查
+    // 报了订单号就以它为准（订单号唯一，客户也常直接报它）；否则拿话里的商品名模糊查
     const byOrderId = text.match(/NX-\\d+/i)?.[0];
+    const keyword = resumeData?.reply ?? inputData.sku;
     const matched = byOrderId
       ? orders.filter((item) => item.orderId.toUpperCase() === byOrderId.toUpperCase())
-      : queryOrders({ sku: inputData.sku }).orders;
+      : queryOrders({ sku: keyword }).orders;
+
+    // 定下某一单：订单号 + 物流信息写进状态
+    const adopt = async (orderId: string) => {
+      const picked = orders.find((item) => item.orderId === orderId);
+      await setState({
+        orderId,
+        logistics:
+          (picked?.logistics ?? "") +
+          (picked?.logisticsStuckDays ? "，已停留 " + picked.logisticsStuckDays + " 天" : ""),
+      });
+      return { intent: inputData.intent, found: true };
+    };
 
     if (matched.length !== 1) {
-      // 定不了唯一一单就别猜 —— 第一次先挂起，等客户补一句（resume 带着他的补充回来继续）
-      if (!resumeData) {
+      // 多单不能一股脑丢给客户 —— 只列「按当前诉求有机会受理」的：
+      // 退货看未拆封 7 天内能退的；其它诉求剔除直接拒绝与未签收的
+      const candidates = matched
+        .map((item) => {
+          const order = orders.find((o) => o.orderId === item.orderId);
+          const verdict = judgeReturn({
+            orderId: item.orderId,
+            issue: inputData.intent === "return" ? "unopened" : inputData.issue,
+          });
+          return {
+            orderId: item.orderId,
+            sku: item.sku,
+            price: order?.price ?? 0,
+            deliveredDaysAgo: order?.deliveredDaysAgo ?? null,
+            verdict: verdict.decision,
+          };
+        })
+        .filter((item) =>
+          inputData.intent === "return"
+            ? item.verdict === "refund"
+            : item.verdict !== "reject" && item.verdict !== "pending",
+        );
+
+      // 客户补充之后候选收敛到一张：直接采用（他已经指出是哪一件，就不必再点一次）
+      if (resumeData && candidates.length === 1) {
+        return adopt(candidates[0].orderId);
+      }
+      // 第一次：挂起让客户确认是哪一单（候选已经只剩有机会的）
+      if (!resumeData && candidates.length > 0) {
         return await suspend({
-          question: matched.length === 0 ? "没查到对应订单" : "同名商品有多单，请确认是哪一单",
-          candidates: matched.map((item) => {
-            const order = orders.find((o) => o.orderId === item.orderId);
-            return {
-              orderId: item.orderId,
-              sku: item.sku,
-              price: order?.price ?? 0,
-              deliveredDaysAgo: order?.deliveredDaysAgo ?? null,
-            };
-          }),
+          question: "同名商品有多单，请确认是哪一单",
+          candidates,
+        });
+      }
+      // 没有可受理的候选：别挂起，交给 judge 说明为什么不能办
+      if (matched.length > 0 && candidates.length === 0) {
+        await setState({
+          lookupNote:
+            "这些订单都不符合退货条件：" +
+            matched
+              .map(
+                (item) =>
+                  item.sku +
+                  (item.deliveredDaysAgo === null
+                    ? "（未签收）"
+                    : "（已签收 " + item.deliveredDaysAgo + " 天）"),
+              )
+              .join("、"),
         });
       }
       // 补充之后还是定不了：不再挂起，交给 judge 走 need-info
       return { intent: inputData.intent, found: false };
     }
 
-    const order = orders.find((item) => item.orderId === matched[0].orderId);
-    await setState({
-      orderId: matched[0].orderId,
-      // 物流信息也写进状态：物流类的问题要直接回它
-      logistics:
-        (order?.logistics ?? matched[0].logistics) +
-        (order?.logisticsStuckDays
-          ? "，已停留 " + order.logisticsStuckDays + " 天"
-          : ""),
-    });
-    return { intent: inputData.intent, found: true };
+    return adopt(matched[0].orderId);
   },
 });
 
@@ -2238,7 +2284,7 @@ const judge = createStep({
     }
     // 退货：没查到订单就先补齐信息
     if (!inputData.found || !state.orderId) {
-      const reason = "还缺商品名或订单号，先跟客户确认是哪一件";
+      const reason = state.lookupNote ?? "还缺商品名或订单号，先跟客户确认是哪一件";
       await setState({ decision: "need-info", reason });
       return { decision: "need-info", reason, needsApproval: false };
     }
@@ -2355,294 +2401,6 @@ export async function approveRun(runId: string, approved: boolean) {
   },
   {
     kind: "project",
-    slug: "workflow-resilience",
-    title: "工作流（三）：接到你的应用",
-    menuTitle: "工作流（三）",
-    summary:
-      "把工作流从 Studio 搬进你自己的页面：客户发消息触发流程，挂起时页面出按钮，点一下从断点继续跑完。",
-    verify: {
-      label: "打开自己的页面跑一遍",
-      description: [
-        "打开 http://localhost:3000/after-sales，输入「我买的遁天梭没拆封，想退」",
-        "页面列出两张候选订单（商品 / 金额 / 签收天数），点「签收 6 天」那张继续 —— 客户全程不需要报订单号",
-        "流程随后挂起，页面出现「批准退款 / 驳回」；点批准后出现客服回复，全程不打开 Studio",
-      ],
-    },
-    concepts: [
-      "在应用中运行 — createRun() 获取一次运行，run.start({ inputData }) 执行至结束或挂起才返回；需要过程输出用 run.stream()",
-      "result.status — 判别式联合：success 取 result.result；suspended 取 result.suspended（挂起步骤路径）与 result.steps[step].suspendPayload；failed 取 result.error",
-      "run.resume({ step, resumeData }) — 配合 createRun({ runId }) 取回运行后恢复，恢复可发生在另一请求、另一进程甚至数日后",
-      "runId 的持久化 — 挂起状态写入 storage（第 6 课那套），否则进程重启后无法定位该运行，恢复失败",
-      "挂起内容与渲染的分工 — suspendSchema 决定内容，前端决定呈现方式；Studio 仅提供通用 JSON 输入",
-      "候选的来源 — 生产环境先按登录身份（resourceId）过滤订单，候选自然收敛；仍有多单则给出订单卡片供选择",
-      "生产注意事项 — 接口需鉴权、避免多实例重复触发、长流程不应在请求内同步等待",
-      "延伸阅读 — 重试与失败兜底（retryConfig / options.onError）、定时与批量（schedule / .foreach）见右侧文档",
-    ],
-    docLinks: [
-      { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
-      { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
-      { title: "Error Handling（重试与兜底）", href: "https://mastra.ai/docs/workflows/error-handling" },
-      { title: "Scheduled Workflows（定时）", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
-      { title: "Workers（丢到后台进程跑）", href: "https://mastra.ai/docs/deployment/workers" },
-    ],
-    files: [
-      {
-        path: "app/api/after-sales/route.ts",
-        order: 1,
-        action: "create",
-        hint: "新建接口：POST 触发工作流（跑到挂起或结束），PATCH 用 runId 从断点恢复 —— 触发与恢复是两个请求，中间隔着等客户的时间",
-        code: `import { NextResponse } from "next/server";
-import { mastra } from "@/src/mastra";
-
-// 只看我们用到的那几个字段
-type RunOutcome = {
-  status: string;
-  suspended?: string[][];
-  steps?: Record<string, { suspendPayload?: unknown }>;
-  result?: { answer?: string };
-  error?: { message?: string };
-};
-
-// 把一次运行的结果整理成页面要的两件事：
-// 跑完了 → 给回复；挂起了 → 给「停在哪一步、要问什么」
-function shape(outcome: RunOutcome) {
-  if (outcome.status === "suspended") {
-    // suspended 是挂起步骤的路径数组，顶层步骤取 [0][0] 就是步骤 id
-    const step = outcome.suspended?.[0]?.[0] ?? "";
-    return {
-      status: "suspended" as const,
-      step,
-      // 那一步 suspend({...}) 写出来给人看的内容（问题、候选项、金额…）
-      ask: outcome.steps?.[step]?.suspendPayload,
-    };
-  }
-  if (outcome.status === "success") {
-    return {
-      status: "success" as const,
-      answer: outcome.result?.answer ?? "",
-    };
-  }
-  return {
-    status: "failed" as const,
-    error: outcome.error?.message ?? \`运行结束：\${outcome.status}\`,
-  };
-}
-
-// POST：客户发一条消息 → 跑工作流（一路跑到挂起或结束）
-export async function POST(req: Request) {
-  const { message } = await req.json();
-  // getWorkflow 的参数是 index.ts 里 workflows 注册的那个 key（不是工作流的 id）
-  const workflow = mastra.getWorkflow("afterSalesWorkflow");
-  const run = await workflow.createRun();
-  const result = await run.start({ inputData: { message } });
-  // runId 一并返回给页面：后面恢复那次运行全靠它
-  return NextResponse.json({ runId: run.runId, ...shape(result) });
-}
-
-// PATCH：客户或主管答完了 → 拿 runId 把那次运行取回来，从断点继续
-// 触发与恢复是两个请求，中间可能隔几分钟、也可能在另一个进程里恢复
-export async function PATCH(req: Request) {
-  const { runId, step, resumeData } = await req.json();
-  const workflow = mastra.getWorkflow("afterSalesWorkflow");
-  const run = await workflow.createRun({ runId });
-  const result = await run.resume({ step, resumeData });
-  return NextResponse.json({ runId: run.runId, ...shape(result) });
-}`,
-      },
-      {
-        path: "app/after-sales/page.tsx",
-        order: 2,
-        action: "create",
-        hint: "新建页面：客户消息 → 触发；挂起时按步骤渲染 —— approval 出「批准 / 驳回」按钮，缺信息出候选订单卡片（点卡片即继续，输入框仅作兜底）",
-        code: `"use client";
-
-import { useState } from "react";
-
-// 工作流挂起时会写出一段给人看的内容，形状由各个步骤的 suspendSchema 决定
-type Ask = {
-  question?: string;
-  reason?: string;
-  orderId?: string;
-  candidates?: {
-    orderId: string;
-    sku: string;
-    price: number;
-    deliveredDaysAgo: number | null;
-  }[];
-};
-
-type Outcome =
-  | { runId: string; status: "suspended"; step: string; ask: Ask }
-  | { runId: string; status: "success"; answer: string }
-  | { runId: string; status: "failed"; error?: string };
-
-export default function AfterSalesPage() {
-  const [message, setMessage] = useState("NX-1007 没拆封，我想退");
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [reply, setReply] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // 触发：客户发一条消息，工作流一路跑到挂起或结束
-  async function send() {
-    setBusy(true);
-    setOutcome(null);
-    setReply("");
-    const res = await fetch("/api/after-sales", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
-    });
-    setOutcome(await res.json());
-    setBusy(false);
-  }
-
-  // 恢复：把答案交回去，从挂起的那一步继续跑
-  async function resume(resumeData: unknown) {
-    if (!outcome || outcome.status !== "suspended") return;
-    setBusy(true);
-    const res = await fetch("/api/after-sales", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runId: outcome.runId, step: outcome.step, resumeData }),
-    });
-    setOutcome(await res.json());
-    setReply("");
-    setBusy(false);
-  }
-
-  const suspended = outcome?.status === "suspended";
-
-  return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="text-lg font-medium text-zinc-800">虚拟宇宙公司 · 售后处理台</h1>
-        <p className="text-[13px] text-zinc-400">
-          客户发消息 → 工作流判定；需要人拍板时它会停住，等你点。
-        </p>
-      </header>
-
-      {/* 客户消息 */}
-      <section className="rounded-2xl border border-zinc-200 p-4">
-        <label className="text-xs text-zinc-400">客户原话</label>
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          rows={2}
-          className="mt-1 w-full resize-none rounded-xl bg-zinc-50 px-3 py-2 text-[15px] leading-7 text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
-        />
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            onClick={send}
-            disabled={busy || !message.trim()}
-            className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
-          >
-            {busy ? "处理中…" : "发送"}
-          </button>
-        </div>
-      </section>
-
-      {/* 运行结果 */}
-      {outcome && (
-        <section className="space-y-3">
-          {outcome.status === "success" && (
-            <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-[15px] leading-7 text-zinc-800 ring-1 ring-zinc-100">
-              {outcome.answer}
-            </div>
-          )}
-
-          {outcome.status === "suspended" && outcome.step === "approval" && (
-            <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-              <p className="text-[13px] text-amber-700">超出客服权限，等主管批准</p>
-              <p className="text-[15px] leading-7 text-zinc-800">{outcome.ask.reason}</p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => resume({ approved: true })}
-                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
-                >
-                  批准退款
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => resume({ approved: false })}
-                  className="rounded-xl px-4 py-1.5 text-sm text-zinc-600 ring-1 ring-zinc-300 disabled:opacity-40"
-                >
-                  驳回
-                </button>
-              </div>
-            </div>
-          )}
-
-          {outcome.status === "suspended" && outcome.step !== "approval" && (
-            <div className="space-y-3 rounded-2xl border border-zinc-200 p-4">
-              {/* 产品里这一步不该让客户背订单号：候选直接出卡片，点一下就走 */}
-              <p className="text-[15px] text-zinc-800">请问是哪一单？</p>
-              {outcome.ask.candidates && outcome.ask.candidates.length > 0 ? (
-                <div className="space-y-2">
-                  {outcome.ask.candidates.map((item) => (
-                    <button
-                      key={item.orderId}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => resume({ reply: item.orderId })}
-                      className="flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-40"
-                    >
-                      <span className="text-[15px] text-zinc-700">
-                        {item.sku} · {item.price} 黑龙币
-                      </span>
-                      <span className="text-xs text-zinc-400">
-                        {item.deliveredDaysAgo === null
-                          ? "未签收"
-                          : \`签收 \${item.deliveredDaysAgo} 天\`}{" "}
-                        · {item.orderId}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[13px] text-zinc-400">{outcome.ask.question}</p>
-              )}
-              {/* 兜底：客户自己报了订单号（或说了别的线索）时走这里 */}
-              <div className="flex gap-2">
-                <input
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  placeholder="也可以直接说订单号，例如 NX-1007"
-                  className="flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-[15px] text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
-                />
-                <button
-                  type="button"
-                  disabled={busy || !reply.trim()}
-                  onClick={() => resume({ reply })}
-                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
-                >
-                  继续
-                </button>
-              </div>
-            </div>
-          )}
-
-          {outcome.status === "failed" && (
-            <p className="text-[13px] text-red-500">运行失败：{outcome.error}</p>
-          )}
-
-          <p className="text-xs text-zinc-300">
-            runId {outcome.runId} · 当前状态 {outcome.status}
-            {suspended ? \` · 停在 \${outcome.step}\` : ""}
-          </p>
-        </section>
-      )}
-    </main>
-  );
-}`,
-      },
-    ],
-  },
-  {
-    kind: "project",
     slug: "rag-knowledge",
     title: "RAG：把售后政策做成知识库",
     menuTitle: "RAG",
@@ -2753,7 +2511,7 @@ import {
 import { policyDocs } from "../knowledge/policies";
 
 // 向量和消息存在同一个库文件里
-// （第 6 课讲过：两个进程并行时这里要用绝对路径，否则各建一份库）
+// （storage 里那行 url：多进程并行时要写绝对路径，否则各建一份库）
 const vectorStore = new LibSQLVector({
   id: "knowledgeBase",
   url: "file:./mastra.db",
@@ -3094,7 +2852,7 @@ observability: new Observability({
 import type { MastraDBMessage } from "@mastra/core/memory";
 
 // 自定义输入处理器：客户误发手机号 / 邮箱时，先把它们换成占位符再进模型
-// （第 13 课的原则：不索要、不回显、也不让它进入上下文）
+// （第 12 课的原则：不索要、不回显、也不让它进入上下文）
 export class MaskContactInfo implements Processor {
   id = "mask-contact-info";
 

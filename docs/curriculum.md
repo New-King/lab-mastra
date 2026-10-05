@@ -19,12 +19,11 @@
 | 6 | 接入前端：用 AI SDK UI 聊天 | `@mastra/ai-sdk` 的 `handleChatStream()` / `toAISdkMessages()`、Server、Client | **未覆盖（我们补）** | 页面自己写：正文 + 思考 + 工具调用都渲染 |
 | 7 | 工作流（一）：把问答变成流程 | Workflow State、Control Flow、Agents & Tools | 阶段 3 | 复用第 6 课页面 |
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
-| 9 | 工作流（三）：接到你的应用 | `createRun()` / `start()` / `resume()`、挂起结果的读取 | 阶段 4 + 6 | 页面出按钮触发与恢复 |
-| 10 | RAG：知识库与检索 | 向量存储、检索工具、chunking / rerank | 阶段 8 | `data-*` part 显示来源 |
-| 11 | 评测：把回归测试跑起来 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
-| 12 | 观测：用 trace 定位问题 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
-| 13 | 护栏：在进模型前后各拦一道 | Guardrails、Processors（过滤 / 脱敏 / 注入防护） | **未覆盖（我们补）** | — |
-| 14 | 上线：存储、鉴权与部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
+| 9 | RAG：知识库与检索 | 向量存储、检索工具、chunking / rerank | 阶段 8 | `data-*` part 显示来源 |
+| 10 | 评测：把回归测试跑起来 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
+| 11 | 观测：用 trace 定位问题 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
+| 12 | 护栏：在进模型前后各拦一道 | Guardrails、Processors（过滤 / 脱敏 / 注入防护） | **未覆盖（我们补）** | — |
+| 13 | 上线：存储、鉴权与部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
 
 > 「参考仓库」= `my19940202/mastra-agent`，分析见 `docs/reference-repo-notes.md`。
 
@@ -44,10 +43,10 @@
 
 **MCP / Skills 不插主线**：MCP（接外部工具）和 Skills（指令资产化）都是外延能力，不是构建 agent 应用的必经路径；插进主线会打断「能力递进」叙事、并让后面课号整体后移。放在 `## 进阶`（MCP = A2，Skills = A1），主线的工具课（第 3 课）之后如需接入，走进阶课。
 
-**一处待定的顺序差异**：参考仓库把**评测放在业务扩展之前**（阶段 5 的理由是"在收集真实线索前，证明 Agent 足够稳定"），而本课程把 RAG（第 10 课）排在 Evals（11）/ Observability（12）之前。两种取舍：
+**一处待定的顺序差异**：参考仓库把**评测放在业务扩展之前**（阶段 5 的理由是"在收集真实线索前，证明 Agent 足够稳定"），而本课程把 RAG（第 9 课）排在 Evals（10）/ Observability（11）之前。两种取舍：
 
-- 保持现状：先把能力铺完、再做工程保障 —— 需要在第 10 课开头说明为什么先 RAG 后评测；
-- 调整顺序：把 11 / 12 提前到第 9 课之后 —— 更贴合「先稳定、再扩展」。
+- 保持现状：先把能力铺完、再做工程保障 —— 需要在第 9 课开头说明为什么先 RAG 后评测；
+- 调整顺序：把 10 / 11 提前到第 8 课之后 —— 更贴合「先稳定、再扩展」。
 
 ## 进阶（可选，按需开课）
 
@@ -118,7 +117,7 @@
 - **存储不用动**：实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`）
 - **字段（`customerProfile`）**：`sku` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
 - **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；写入靠提示词那行「客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来」
-- **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 13 课展开）
+- **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 12 课展开）
 - **验收**：先聊「NX-1002 这台的金丝断裂，能换新吗」→ 新建对话问「我上次那件事怎么样了」→ 它答得出订单号 / 商品 / 已答复方案（工作记忆按 `resource` 范围跨对话生效；客户已由提示词固定为罗峰先生，不是靠记忆认人）
 - **待验证**：Studio 里工作记忆是否总能写入（依赖 agent 主动调 `updateWorkingMemory`）；Studio 新建对话时 `resourceId` 是否保持不变
 - **文档**：`/docs/memory/working-memory`、`/docs/memory/overview`、`/docs/storage`
@@ -130,7 +129,7 @@
 - **弃用路径**：本地 `@mastra/fastembed` —— 实测其默认模型是**英文**的（`bge-small-en-v1.5`），且首次要能访问 HuggingFace 下权重（国内网络会报「Failed to determine the embedder's output dimension」）；包也没导出中文小模型的入口
 - **依据**：官方 `docs/memory/semantic-recall`（`storage` 与 `vector` 分开传，省略时默认 LibSQL；官方示例本身就是接云嵌入 `ModelRouterEmbeddingModel("openai/text-embedding-3-small")`）；官方 `docs/memory/message-history` 原文「Setting `messageHistory` without `lastMessages` disables the default 10-message cap. Set both to combine a count cap with a token budget.」
 - **只改一个文件**：`src/mastra/agents/support-agent.ts`
-- **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）；Memory Processors（手动处理器与通用 Processors 一起放第 13 课）
+- **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）；Memory Processors（手动处理器与通用 Processors 一起放第 12 课）
 - **验收**：先聊「NX-1002 这台的金丝断裂」→ 新建对话问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
 - **实测结论（2026-10-02，Studio + 查库）**：
   - 向量确实落库：表名 `memory_messages_1024`（**1024 就是嵌入模型的输出维度**），每条 `embedding` = 4096 字节 = 1024 个 float
@@ -178,19 +177,7 @@
 - **待验证**：Studio 的 Workflows 页里挂起后能不能直接点恢复（界面行为未实测）；`createRun({ runId })` 跨进程恢复（runId 从库里取）是否正常
 - **文档（已核实 200）**：`/docs/workflows/suspend-and-resume`、`/docs/workflows/human-in-the-loop`、`/docs/workflows/snapshots`、`/docs/workflows/time-travel`
 
-### 第 9 课 · 工作流（三）：接到你的应用
-
-- **目标**：不打开 Studio，从自己的页面把第 8 课的 `after-sales` 用起来：触发 → 挂起时出按钮/输入框 → 点一下从断点继续
-- **能力**：`createRun()` / `run.start()` / `run.resume()`、`result.status` 判别（`success` / `suspended` / `failed`）、`result.suspended` 与 `steps[step].suspendPayload`
-- **依据（2026-10-04 核对官方文档 workflows/overview 与 suspend-and-resume）**：`mastra.getWorkflow(<注册 key>)` 取工作流；`createRun()` → `run.start({ inputData })` 跑到结束或挂起；`result.status === "suspended"` 时可用 `result.suspended`（步骤路径数组，顶层取 `[0][0]`）与 `result.steps[step].suspendPayload`；`success` 取 `result.result`；恢复用 `createRun({ runId })` + `run.resume({ step, resumeData })`
-- **改动文件**：新建 `app/api/after-sales/route.ts`（POST 触发 / PATCH 恢复，两个请求）+ 新建 `app/after-sales/page.tsx`（客户消息 → 触发；`approval` 挂起出「批准 / 驳回」，缺信息挂起出候选与输入框）。`src/mastra/index.ts` 不用改
-- **验收**：`localhost:3000/after-sales` 输入「NX-1007 没拆封，我想退」→ 页面出审批按钮 → 点批准 → 出现回复，全程不开 Studio（已实测：触发/批准/驳回/补订单号四条路径都通）
-- **踩坑**：`getWorkflow()` 的参数是 `index.ts` 里 `workflows: { ... }` 的 **key**（我们这里是 `afterSalesWorkflow`），不是工作流的 `id`（`after-sales`）
-- **候选订单怎么给**：挂起时的 `candidates` 带上商品 / 金额 / 签收天数，页面渲染成可点的订单卡片（输入框只作兜底）；真实项目里候选应该先按登录身份（`resourceId`）过滤，而不是让客户背订单号
-- **原第 9 课内容（重试 / 定时 / 批量）去处**：不再单独成课，作为延伸阅读保留在课页右侧链接（Error Handling、Scheduled Workflows、Workers），素材留在 git 历史里（`d4c3f99` 之前那一版）
-- **文档（已核实 200）**：`/docs/workflows/overview`、`/docs/workflows/suspend-and-resume`、`/docs/workflows/error-handling`、`/docs/workflows/scheduled-workflows`、`/docs/deployment/workers`
-
-### 第 10 课 · RAG：知识库与检索
+### 第 9 课 · RAG：知识库与检索
 
 - **目标**：文档入库（chunk + embed + 存向量库）→ 检索工具 → agent 作答时引用来源；**语料就是售后政策原文（P1–P6）**
 - **依赖（新增）**：`pnpm add @mastra/rag` —— `MDocument`（切块）与 `createVectorQueryTool`（检索工具）都在这里；嵌入模型沿用第 5 课的硅基流动，不再新增 key
@@ -201,7 +188,7 @@
 - **待验证**：`createIndex` 重复运行是否报错（重复入库前要先删旧索引）；`createVectorQueryTool` 的 `model` 接受 AI SDK 的 openai-compatible 嵌入模型
 - **文档（已核实 200）**：`/reference/rag/overview`、`/reference/rag/chunking-and-embedding`、`/reference/rag/retrieval`、`/reference/rag/vector-databases`
 
-### 第 11 课 · 评测：把回归测试跑起来
+### 第 10 课 · 评测：把回归测试跑起来
 
 - **目标**：定义评测集与 scorer，在 CI 里跑；分数低于阈值时门禁失败
 - **能力**：Built-in Scorers、Custom Scorers、Datasets、Quick Checks、Gates and Verdicts、Running in CI、Vitest
@@ -213,7 +200,7 @@
 - **待验证**：`pnpm dlx tsx` 在学员机器上首次会下载 tsx（离线环境需换成本地 tsx 或 vitest）；`result.scores` 的具体结构未实跑打印
 - **文档（已核实 200）**：`/docs/evals/overview`、`/docs/evals/custom-scorers`、`/docs/evals/gates-and-verdicts`、`/docs/evals/running-in-ci`
 
-### 第 12 课 · 观测：用 trace 定位问题
+### 第 11 课 · 观测：用 trace 定位问题
 
 - **目标**：一次会话能看到完整 trace（步骤、工具调用、token、耗时、错误），并接入日志与指标
 - **能力**：Traces（Usage / Logging / Feedback / Storage）、Metrics、Studio Observability
@@ -224,7 +211,7 @@
 - **待验证**：Studio Observability 页里 trace 的字段与本文描述一致；DuckDB 存储文件在本地项目里的落点
 - **文档（已核实 200）**：`/docs/observability/tracing/overview`、`/docs/observability/logging`、`/docs/observability/metrics/overview`、`/docs/studio/observability`
 
-### 第 13 课 · 护栏：在进模型前后各拦一道
+### 第 12 课 · 护栏：在进模型前后各拦一道
 
 - **目标**：输入侧拦注入 / 输出侧脱敏；对不合规内容返回兜底话术
 - **能力**：Guardrails、Processors
@@ -235,7 +222,7 @@
 - **待验证**：`PromptInjectionDetector` / `ModerationProcessor` 用 DeepSeek 模型的分类效果；被拦下时返回给客户的话术是否可定制
 - **文档（已核实 200）**：`/docs/agents/guardrails`、`/docs/agents/processors`、`/reference/processors/processor-interface`
 
-### 第 14 课 · 上线：存储、鉴权与部署
+### 第 13 课 · 上线：存储、鉴权与部署
 
 - **目标**：换生产存储、加鉴权、部署到云；重启后 workflow 能续跑
 - **能力**：Storage、Auth（Simple / JWT / FGA）、Deploy（Mastra Server / Cloud Providers / Workflow Runners / Workers / Web Framework）、Server Middleware
@@ -251,7 +238,7 @@
 ## 推进优先级
 
 - **第 1–9 课 = "能用"的主线**：能聊 → 能记 → 能编排 → 能审批 → 能容错定时。
-- **第 10 课（RAG）不是前置**：它提升回答质量，采集/流程跑通后再做更划算（借参考仓库的排序结论）。
+- **第 9 课（RAG）不是前置**：它提升回答质量，采集/流程跑通后再做更划算（借参考仓库的排序结论）。
 - **第 11–12 课（评测与观测）建议早做**：在"改提示词 / 换模型"之前就要有，否则每次调整都是盲改、无法判断有没有退化。
 - **第 13–14 课（安全与上线）是接触真实用户的前置**：要收真实数据、真实联系方式前必须补。
 
