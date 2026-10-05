@@ -190,6 +190,7 @@
 - **验收**：问「过了 15 天还能换新吗」→ 回答引用 P2 并给出正确结论；问政策里没写的事 → 明确说不知道，不编
 - **实测（2026-10-05）**：① `upsert` 是**追加** —— 重复入库把 7 个块堆成 49 条（检索里全是重复段落），改成「`deleteIndex` → `createIndex` → `upsert`」后重跑稳定 7 条；② 检索返回的正文来自 **metadata**：只写 `{ source }` 时检索回来是空内容（模型只看得见条款号），把 `text` 写进 metadata 才能引用原文；③ `createVectorQueryTool` 的 `model` 接受 openai-compatible 嵌入模型
 - **文档（已核实 200）**：`/reference/rag/overview`、`/reference/rag/chunking-and-embedding`、`/reference/rag/retrieval`、`/reference/rag/vector-databases`
+- **延伸阅读弹窗（2026-10-05 加）**：「知识点」右上角的按钮（组件 `ConceptArticleModal`，字段 `conceptArticle`）里讲 **GraphRAG**：相似度图（Mastra 这版，边 = 块间相似度 ≥ threshold，查询时临时建图）vs 抽取关系图（LangChain+Neo4j 的 `LLMGraphTransformer` / `GraphCypherQAChain`、微软 GraphRAG 的社区摘要）、为什么小语料用不上、用 metadata 存显式引用（`refs`）更划算
 
 ### 第 10 课 · 评测：把回归测试跑起来
 
