@@ -21,21 +21,19 @@
 | 8 | 工作流（二）：暂停恢复与人工审批 | Suspend & Resume、Human-in-the-Loop、Snapshots、Time Travel | 阶段 4 + 6 | 审批 UI |
 | 9 | RAG：知识库与检索 | 向量存储、检索工具、chunking / rerank | 阶段 8 | `data-*` part 显示来源 |
 | 10 | 评测：把回归测试跑起来 | Built-in / Custom Scorers、Datasets、Quick Checks、Gates、CI、Vitest | 阶段 5 | — |
-| 11 | 观测：用 trace 定位问题 | Traces、Logging、Metrics、Feedback、Studio | 阶段 5 | — |
-| 12 | 护栏：在进模型前后各拦一道 | Guardrails、Processors（过滤 / 脱敏 / 注入防护） | **未覆盖（我们补）** | — |
-| 13 | 上线：存储、鉴权与部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
+| 11 | 上线：存储、鉴权与部署 | Storage、Auth（Simple/JWT/FGA）、Deploy（Server/Cloud/Workflow Runners）、Middleware | 阶段 9 | — |
 
 > 「参考仓库」= `my19940202/mastra-agent`，分析见 `docs/reference-repo-notes.md`。
 
 ## 排列思路（与参考仓库的差异）
 
-整条主线是**能力递进链**：先把判断做准（Agent → 工具 → 工作流），再解决多轮接得住（状态 / 暂停恢复 / 容错定时），最后才接真实用户（RAG → 评测 → 观测 → 安全 → 上线）。
+整条主线是**能力递进链**：先把判断做准（Agent → 工具 → 工作流），再解决多轮接得住（状态 / 暂停恢复 / 容错定时），最后才接真实用户（RAG → 评测 → 上线）。
 
 和参考仓库「阶段 1–9」的三点结构性差异：
 
 | | 参考仓库 | 本课程 |
 |---|---|---|
-| 切法 | 按**业务里程碑**切（采集 → 充分度 → 路由 → 恢复 → 授权 → 交接） | 按**能力单元**切：记忆拆 4/5、工作流拆 7/8/9、评测与观测拆 11/12 —— 一课一能力，每课可独立验收、能中途停 |
+| 切法 | 按**业务里程碑**切（采集 → 充分度 → 路由 → 恢复 → 授权 → 交接） | 按**能力单元**切：记忆拆 4/5、工作流拆 7/8/9、评测拆 10 —— 一课一能力，每课可独立验收、能中途停 |
 | 前端 | 全程 Studio 验证 | **第 6 课先打通「自己的前端」**，也是「同一个前端换后端」的证明点 |
 | 补齐 | 语义召回 / 多用户、定时与后台任务、Evals 进 CI、Guardrails、Auth 与部署、多 provider 均未覆盖 | 依次落在第 5 / 9 / 11 / 13 / 14 / 2 课（全表见 `coverage-matrix.md`） |
 
@@ -117,7 +115,7 @@
 - **存储不用动**：实例级 `storage` 由脚手架在 `src/mastra/index.ts` 配好（`MastraCompositeStore` + `LibSQLStore`）
 - **字段（`customerProfile`）**：`sku` / `orderId` / `issue` / `promise` —— 全部指向「客服干活必需的信息」
 - **设计要点**：字段必须是**角色的产物**（角色 → 任务 → 必须知道什么 → schema），否则只是硬记。`orderId` 同时是第 3 课 `checkReturnEligibility` 的入参，`promise`（已答复的方案）保证客服不改口 —— 「记下来」换来的是「不用再问」和「前后一致」；写入靠提示词那行「客户报的商品、订单号、问题和已答复的方案，用 updateWorkingMemory 记下来」
-- **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存，第 12 课展开）
+- **原则（借参考仓库阶段 1）**：用 Zod 定义结构化记忆；**不同性质的信息用独立 schema**（事实 / 状态 / 授权 / 联系方式分开存）
 - **验收**：先聊「NX-1002 这台的金丝断裂，能换新吗」→ 新建对话问「我上次那件事怎么样了」→ 它答得出订单号 / 商品 / 已答复方案（工作记忆按 `resource` 范围跨对话生效；客户已由提示词固定为罗峰先生，不是靠记忆认人）
 - **待验证**：Studio 里工作记忆是否总能写入（依赖 agent 主动调 `updateWorkingMemory`）；Studio 新建对话时 `resourceId` 是否保持不变
 - **文档**：`/docs/memory/working-memory`、`/docs/memory/overview`、`/docs/storage`
@@ -130,7 +128,7 @@
 - **依据**：官方 `docs/memory/semantic-recall`（`storage` 与 `vector` 分开传，省略时默认 LibSQL；官方示例本身就是接云嵌入 `ModelRouterEmbeddingModel("openai/text-embedding-3-small")`）；官方 `docs/memory/message-history` 原文「Setting `messageHistory` without `lastMessages` disables the default 10-message cap. Set both to combine a count cap with a token budget.」
 - **改三个文件**：新建 `src/mastra/db.ts`（导出绝对路径 `DB_URL`）＋ 新建 `src/mastra/embedder.ts`（provider + `embedder` + `EMBED_DIM`，语义召回与后面 RAG 的检索共用）＋ 改 `src/mastra/agents/support-agent.ts`（memory 里用它）。**不再在 agent 文件里内联 provider** —— 两个文件各建一份，换模型时必然漏改一处
 - **库路径必须绝对（2026-10-05 踩实）**：`file:./mastra.db` 按**各进程的工作目录**解析 —— `mastra dev` 的子进程在 `src/mastra/public`（改完后是 `.mastra/output`）、Next 应用在项目根，于是各建一份库：入库写 A、检索查 B，`policySearch` 不报错、永远返回空。改用 `src/mastra/db.ts` 的 `DB_URL`（从本文件位置向上找同时有 `package.json` 与 `src/mastra` 的那层；可用 `MASTRA_DB_FILE` 覆盖）后实测：4111 与应用侧入库都写同一个 `mastra.db`
-- **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）；Memory Processors（手动处理器与通用 Processors 一起放第 12 课）
+- **本课不讲**：Observational Memory（长会话压缩，需要 LibSQL / PG / MongoDB，先用 `messageHistory` 的 token 预算解决）
 - **验收**：先聊「NX-1002 这台的金丝断裂」→ 新建对话问「我上次说的那台金丝网什么问题？」→ 它召回那句话，接着问「能换新吗」它会调工具；Trace 里能看到带进上下文的消息
 - **实测结论（2026-10-02，Studio + 查库）**：
   - 向量确实落库：表名 `memory_messages_1024`（**1024 就是嵌入模型的输出维度**），每条 `embedding` = 4096 字节 = 1024 个 float
@@ -204,29 +202,7 @@
 - **待验证**：`result.scores` 的具体结构未实跑打印
 - **文档（已核实 200）**：`/docs/evals/overview`、`/docs/evals/custom-scorers`、`/docs/evals/gates-and-verdicts`、`/docs/evals/running-in-ci`
 
-### 第 11 课 · 观测：用 trace 定位问题
-
-- **目标**：一次会话能看到完整 trace（步骤、工具调用、token、耗时、错误），并接入日志与指标
-- **能力**：Traces（Usage / Logging / Feedback / Storage）、Metrics、Studio Observability
-- **立论（借参考仓库阶段 6）**：**排查靠 Trace，不靠模型自述** —— 模型的 `reasoning` 不是业务输出，可以设为 `none`；要看"为什么答错"就去看工具入参出参、workflow 走哪个分支、Working Memory 当时是什么
-- **脚手架已配好**（不用新装包）：`index.ts` 里已有 `PinoLogger` + `Observability({ configs: { default: { serviceName, exporters: [MastraStorageExporter, MastraPlatformExporter], spanOutputProcessors: [SensitiveDataFilter] } } })`，观测数据落在 `MastraCompositeStore` 的 `domains.observability`（DuckDB）
-- **改动文件**：只改 `index.ts` 里 logger 的 name 与 level（level 走 `LOG_LEVEL` 环境变量）
-- **验收**：Studio 里能定位"这一步为什么慢 / 为什么答错"
-- **待验证**：Studio Observability 页里 trace 的字段与本文描述一致；DuckDB 存储文件在本地项目里的落点
-- **文档（已核实 200）**：`/docs/observability/tracing/overview`、`/docs/observability/logging`、`/docs/observability/metrics/overview`、`/docs/studio/observability`
-
-### 第 12 课 · 护栏：在进模型前后各拦一道
-
-- **目标**：输入侧拦注入 / 输出侧脱敏；对不合规内容返回兜底话术
-- **能力**：Guardrails、Processors
-- **与业务字段的关系（借参考仓库阶段 6）**：事实、授权、联系方式**分开保存**；授权记录必须同时具备 `granted` + 用途版本 + 完整范围 + 用户原话，只有一个布尔不算授权；用户拒绝或撤回后必须强制关闭后续采集
-- **依据（2026-10-02 核对随包文档）**：处理器挂在 Agent 上：`inputProcessors` / `outputProcessors`；内置的来自 `@mastra/core/processors`（`PromptInjectionDetector`、`ModerationProcessor`、`UnicodeNormalizer`、`TokenLimiter` 等）；自定义实现 `Processor` 接口（`processInput({ messages })` → 返回新消息数组，正文在 `content.parts` 里，只改 `type === "text"` 的 part）
-- **新增/改动文件**：`src/mastra/processors/mask-contact.ts`（自定义脱敏）+ 覆盖 `agents/support-agent.ts`（挂前后处理器）
-- **验收**：构造越狱输入被拦；消息里的手机号 / 邮箱在进模型前被换成占位符；不合规输出被拦或改写
-- **待验证**：`PromptInjectionDetector` / `ModerationProcessor` 用 DeepSeek 模型的分类效果；被拦下时返回给客户的话术是否可定制
-- **文档（已核实 200）**：`/docs/agents/guardrails`、`/docs/agents/processors`、`/reference/processors/processor-interface`
-
-### 第 13 课 · 上线：存储、鉴权与部署
+### 第 11 课 · 上线：存储、鉴权与部署
 
 - **目标**：换生产存储、加鉴权、部署到云；重启后 workflow 能续跑
 - **能力**：Storage、Auth（Simple / JWT / FGA）、Deploy（Mastra Server / Cloud Providers / Workflow Runners / Workers / Web Framework）、Server Middleware
@@ -243,7 +219,7 @@
 
 - **第 1–9 课 = "能用"的主线**：能聊 → 能记 → 能编排 → 能审批 → 能容错定时。
 - **第 9 课（RAG）不是前置**：它提升回答质量，采集/流程跑通后再做更划算（借参考仓库的排序结论）。
-- **第 11–12 课（评测与观测）建议早做**：在"改提示词 / 换模型"之前就要有，否则每次调整都是盲改、无法判断有没有退化。
+- **第 10 课（评测）建议早做**：在"改提示词 / 换模型"之前就要有，否则每次调整都是盲改、无法判断有没有退化。
 - **第 13–14 课（安全与上线）是接触真实用户的前置**：要收真实数据、真实联系方式前必须补。
 
 ## 写课风格（借参考仓库）
