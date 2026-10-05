@@ -2660,7 +2660,6 @@ vectors: {
 workflows: {
   weatherWorkflow,
   afterSalesWorkflow,
-  dailyCheckWorkflow,
   ingestPoliciesWorkflow,
 },
 `,
