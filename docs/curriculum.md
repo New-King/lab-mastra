@@ -148,6 +148,7 @@
 - **agentId**：`support-agent`；`memory.thread` 用页面带来的 `chatId`，`memory.resource` 固定成一个客户 id（多客户时换成真实客户 id，就是记忆的隔离边界）
 - **官方坑（可选，不影响网页）**：Studio 与 `next dev` 并行时，`src/mastra/index.ts` 里 storage 的 `url` 用相对路径会各建一个 `mastra.db`（相对路径按各进程工作目录解析）—— 后果只是「Studio 里看不到网页那条对话」。想让 Studio 看到同一批数据：`url` 写绝对路径，或放进 `.env`（`TURSO_DATABASE_URL=file:/你的路径/mastra.db`），重启两个进程
 - **验收**：`localhost:3000` 上能聊、流式输出、工具照常调用、刷新后历史还在；流式过程中能看到思考块、工具卡（入参 / 结果）与 markdown 表格
+- **默认模板必撞的坑（2026-10-05 实测）**：脚手架（含 `--no-observability`）生成的 `index.ts` 都带 `domains: { observability: await new DuckDBStore().getStore('observability') }`；把实例 import 进 Next 路由，打包时会把 DuckDB 每个平台分支都当依赖解析 → `@duckdb/node-bindings-<平台>` Module not found、页面 500。解法：`next.config.ts` 加 `serverExternalPackages: ["@mastra/duckdb", "@duckdb/node-api", "@duckdb/node-bindings"]`（课页的 route 说明里也写了）
 - **`sendReasoning`**：`handleChatStream` 默认 false（思考不进流），课里的 route 传了 `true`
 - **待验证**：`version: "v7"` 要与安装的 `ai` 大版本一致（官方指南写 v7）；`chatId` 透传进 `handleChatStream` 的 `params` 是否被接受；`memory.deleteThread` 签名已按 `@mastra/core/dist/memory/memory.d.ts`（`abstract deleteThread(threadId: string)`）核对，未实跑
 - **文档**：`/guides/getting-started/next-js`、`/integrations/agentic-ui/ai-sdk-ui`、`/reference/memory/recall`、AI SDK 的 `useChat`
@@ -196,8 +197,8 @@
 - **依赖**：无新增 —— `createScorer` 与 `runEvals` 都在 `@mastra/core/evals`；prebuilt scorers（用 judge 模型）才需要另装 `@mastra/evals`
 - **新增文件**：`src/mastra/evals/{scorers,cases,run}.ts`
 - **依据（2026-10-02 核对随包文档）**：`createScorer({ id, description }).analyze(...).generateScore(...)`（全函数步骤不调 judge）；`runEvals({ target, data, gates, scorers })`，`gates` 必须全部 1.0，普通 scorer 可带 `threshold`；返回 `result.verdict`（`passed` / `scored` / `failed`）+ `scores`
-- **验收**：`pnpm dlx tsx src/mastra/evals/run.ts` 能跑完案例集；把提示词改坏（例如去掉「说清依据哪一条」）后 verdict 不是 passed、进程退出码非 0
-- **待验证**：`pnpm dlx tsx` 在学员机器上首次会下载 tsx（离线环境需换成本地 tsx 或 vitest）；`result.scores` 的具体结构未实跑打印
+- **验收**：`pnpm dlx tsx --env-file=.env src/mastra/evals/run.ts` 能跑完案例集（tsx 不读 .env，实测不加 `--env-file` 时 `DEEPSEEK_API_KEY` 读不到）；把提示词改坏（例如去掉「说清依据哪一条」）后 verdict 不是 passed、进程退出码非 0
+- **待验证**：`result.scores` 的具体结构未实跑打印
 - **文档（已核实 200）**：`/docs/evals/overview`、`/docs/evals/custom-scorers`、`/docs/evals/gates-and-verdicts`、`/docs/evals/running-in-ci`
 
 ### 第 11 课 · 观测：用 trace 定位问题

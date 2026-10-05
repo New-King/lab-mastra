@@ -984,7 +984,7 @@ export const supportAgent = new Agent({
         path: "app/api/generate/route.ts",
         order: 1,
         action: "create",
-        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）",
+        hint: "路径必须是 /api/generate（下面的 app/page.tsx 用 useChat 调它）。注意 RESOURCE_ID 固定成 web-user：页面和 Studio 用的是两套 resource，记忆不互通（多客户时换成真实客户 id）。若页面 500、报 \"@duckdb/node-bindings-<平台>\" 之类的 Module not found：模板自带的 DuckDB 是原生模块（按平台分包），Next 打包会把每个平台的分支都当依赖去解析 —— 在 next.config.ts 加 serverExternalPackages: [\"@mastra/duckdb\", \"@duckdb/node-api\", \"@duckdb/node-bindings\"]，重启 next dev 即可",
         code: `import { handleChatStream } from "@mastra/ai-sdk";
 import { toAISdkMessages } from "@mastra/ai-sdk/ui";
 import { createUIMessageStreamResponse } from "ai";
@@ -2677,7 +2677,7 @@ workflows: {
     verify: {
       label: "跑一遍评测",
       description: [
-        "在 my-mastra-app 目录执行 pnpm dlx tsx src/mastra/evals/run.ts",
+        "在 my-mastra-app 目录执行 pnpm dlx tsx --env-file=.env src/mastra/evals/run.ts（tsx 不会自己读 .env，少了它 agent 调模型会没 key）",
         "这是一个带评测的客服 agent：固定案例集会逐个问一遍，再用两个 scorer 打分，未达阈值时命令以失败退出",
       ],
     },
