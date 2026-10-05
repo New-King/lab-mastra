@@ -496,7 +496,7 @@ export type Order = {
   deliveredDaysAgo: number | null; // 签收距今多少天；未签收为 null
   logistics: string;
   logisticsStuckDays: number; // 物流在途停留天数
-  address: string; // 收货地址（第 12 课用来讲 PII 脱敏）
+  address: string; // 收货地址（第 14 课用来讲 PII 脱敏）
 };
 
 // 客户只有一个（罗峰先生）：这就是一份共享 mock，谁问都是他这 7 条订单
@@ -855,6 +855,8 @@ export const supportAgent = new Agent({
       "semanticRecall — 历史消息向量化后按语义相似度召回；开启后每轮都会检索（默认关闭，需要 vector + embedder）",
       "vector — 存放向量的库：LibSQLVector 写入本地文件，与消息共用 mastra.db",
       "embedder — 文本向量化模型：云端（如硅基流动 BAAI/bge-large-zh-v1.5）或本地 @mastra/fastembed；更换模型会改变维度，旧向量需重建",
+      "嵌入模型只建一处 — 放进 src/mastra/embedder.ts：语义召回与后面 RAG 的检索共用同一个实例；在两个文件里各建一份 provider，换模型时必然漏改一处",
+      "数据库路径只写一处 — src/mastra/db.ts 导出绝对的 DB_URL：写 file:./mastra.db 这种相对路径时，它按各进程的工作目录解析（mastra dev 的子进程不在项目根），两个进程会各建一份库，入库写进 A、检索查 B，而查询不报错、只是永远为空",
       "messageHistory.maxTokens — 按 token 预算裁剪历史；与 lastMessages 同时配置即条数 + 预算双重上限",
       "可调项 — topK（召回条数）、messageRange（命中消息前后各带几条）、scope（resource 跨对话 / thread 单对话）；命中内容每轮都会进入上下文",
     ],
@@ -873,24 +875,72 @@ export const supportAgent = new Agent({
     ],
     files: [
       {
-        path: "src/mastra/agents/support-agent.ts",
+        path: "src/mastra/db.ts",
         order: 1,
-        action: "replace",
-        hint: "只改 memory 这一段（加 vector + embedder + 语义召回）；数据库连接由 src/mastra/index.ts 的 storage 提供，这个文件本课不用动",
-        code: `import { Agent } from "@mastra/core/agent";
-import { Memory } from "@mastra/memory";
-import { LibSQLVector } from "@mastra/libsql";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { z } from "zod";
-import { listProducts, findOrders } from "../tools/lookup-tool";
-import { checkReturnEligibility } from "../tools/return-tool";
+        action: "create",
+        hint: "把数据库路径收成绝对路径：相对路径按各进程的工作目录解析，两个进程会各建一份库（入库写 A、检索查 B）",
+        code: `import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 数据库只留一个文件。
+// 写相对路径（file:./mastra.db）时，它按**各进程的工作目录**解析：mastra dev 的子进程
+// 跑在 src/mastra/public（或 .mastra/output）下、Next 应用跑在项目根 —— 于是各建一份库，
+// 入库写进 A、检索查 B，policySearch 永远返回空（还不报错，很难发现）。
+// 这里从本文件位置向上找项目根（同时有 package.json 与 src/mastra 的那一层），
+// 算出绝对路径：无论哪个进程、从哪个目录启动，都指向同一个 mastra.db。
+// 想显式指定就设 MASTRA_DB_FILE（绝对路径）。
+function findProjectRoot(from: string): string {
+  let dir = from;
+  for (let i = 0; i < 10; i += 1) {
+    const hasApp = existsSync(path.join(dir, "package.json")) && existsSync(path.join(dir, "src", "mastra"));
+    if (hasApp) return dir;
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  return process.cwd();
+}
+
+const dbFile = process.env.MASTRA_DB_FILE
+  ? path.resolve(process.env.MASTRA_DB_FILE)
+  : path.join(findProjectRoot(path.dirname(fileURLToPath(import.meta.url))), "mastra.db");
+
+export const DB_URL = "file:" + dbFile;`,
+      },
+      {
+        path: "src/mastra/embedder.ts",
+        order: 2,
+        action: "create",
+        hint: "新建共用的嵌入模型模块：这一课的语义召回与后面 RAG 的检索都用它 —— 别在两个文件里各写一份 provider",
+        code: `import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 // 嵌入模型走硅基流动的 OpenAI 兼容端点：中文效果好，也不用在本地下载模型
+// 记忆检索（semanticRecall）与政策检索（RAG）共用这一个 —— 不要在两个文件里各建一份
 const siliconflow = createOpenAICompatible({
   name: "siliconflow",
   baseURL: "https://api.siliconflow.cn/v1",
   apiKey: process.env.SILICONFLOW_API_KEY,
 });
+
+export const embedder = siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5");
+
+// 输出维度：建向量索引、建表都要用同一个值（换模型 = 维度变 = 旧向量要重建）
+export const EMBED_DIM = 1024;`,
+      },
+      {
+        path: "src/mastra/agents/support-agent.ts",
+        order: 3,
+        action: "replace",
+        hint: "只改 memory 这一段（加 vector + embedder + 语义召回）；数据库连接由 src/mastra/index.ts 的 storage 提供，这个文件本课不用动",
+        code: `import { Agent } from "@mastra/core/agent";
+import { Memory } from "@mastra/memory";
+import { LibSQLVector } from "@mastra/libsql";
+import { z } from "zod";
+import { listProducts, findOrders } from "../tools/lookup-tool";
+import { checkReturnEligibility } from "../tools/return-tool";
+import { embedder } from "../embedder";
+import { DB_URL } from "../db";
 
 const customerProfile = z.object({
   sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
@@ -913,10 +963,10 @@ export const supportAgent = new Agent({
   model: "deepseek/deepseek-flash",
   tools: { listProducts, findOrders, checkReturnEligibility },
   memory: new Memory({
-    // 向量和消息存同一个本地库文件
-    vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
-    // 嵌入模型：硅基流动的 bge-large-zh-v1.5（1024 维，中文）
-    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
+    // 向量和消息存同一个本地库文件（路径来自 src/mastra/db.ts，绝对路径）
+    vector: new LibSQLVector({ id: "mastra-vector", url: DB_URL }),
+    // 嵌入模型：共用 src/mastra/embedder.ts 里那一个（硅基流动 bge-large-zh-v1.5，1024 维，中文）
+    embedder,
     options: {
       // 条数上限 + token 预算，两个都写就是双重上限
       lastMessages: 20,
@@ -926,8 +976,7 @@ export const supportAgent = new Agent({
       workingMemory: { enabled: true, schema: customerProfile },
     },
   }),
-});
-`,
+});`,
       },
     ],
   },
@@ -1590,7 +1639,7 @@ function SendButton({
       "createWorkflow — 定义工作流：id、inputSchema、outputSchema、stateSchema；用 .then() 串联步骤，最后 .commit()",
       "createStep — 一个步骤对应一件独立的事（分类 / 查订单 / 判资格 / 回复）：自声明 inputSchema、outputSchema；执行时可取上一步产物 inputData 与共享的 state、mastra",
       "Workflow State — 所有步骤共享的状态：stateSchema 声明字段，setState 更新，跨暂停恢复保留",
-      "Control Flow — .then() 顺序连接：上一步 output 即下一步 inputData（条件分支 .branch 见第 8 课，批量循环 .foreach 见延伸文档）",
+      "Control Flow — .then() 顺序连接：上一步 output 即下一步 inputData（条件分支 .branch 见第 8 课，批量循环 .foreach 见第 9 课）",
       "意图分流 — 同一流程按 intent 分别处理：退货走售后政策、物流回运输状态、咨询交由模型作答；结论写入 state，末步统一回复",
       "issue — 分类时同时判定问题类型（unopened / quality / other），决定退货走 P1 还是 P2 / P3；客户未提及按 quality",
       "步骤与 agent — 每步配专用 agent：classifier-agent 只分类、reply-agent 只措辞，均不挂 tools；复用客服 agent 会一并带入其角色与工具",
@@ -2069,16 +2118,12 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       "run.resume({ step, resumeData }) — 从挂起点恢复：step 可传步骤实例或 id；仅传 resumeData 时恢复最近一个挂起点",
       "createRun({ runId }) — 用 runId 取回运行再 resume，因此恢复可发生在任意请求中（HTTP 路由、审批后台）",
       "snapshots / time travel — 每步状态落库：进程重启后仍可从断点续跑，也可回放到某一步重跑以定位问题",
-      "本课没展开的 — 重试与失败兜底（retryConfig / options.onError）、定时与批量（schedule / .foreach）见右侧文档，用得上再看",
     ],
     docLinks: [
       { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
       { title: "Human-in-the-Loop", href: "https://mastra.ai/docs/workflows/human-in-the-loop" },
       { title: "Snapshots", href: "https://mastra.ai/docs/workflows/snapshots" },
       { title: "Time Travel", href: "https://mastra.ai/docs/workflows/time-travel" },
-      { title: "Error Handling（重试与兜底）", href: "https://mastra.ai/docs/workflows/error-handling" },
-      { title: "Scheduled Workflows（定时）", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
-      { title: "Workers（丢到后台进程跑）", href: "https://mastra.ai/docs/deployment/workers" },
     ],
     files: [
       {
@@ -2401,6 +2446,455 @@ export async function approveRun(runId: string, approved: boolean) {
   },
   {
     kind: "project",
+    slug: "workflow-resilience",
+    title: "工作流（三）：容错与定时",
+    menuTitle: "工作流（三）",
+    summary:
+      "让流程自己扛住失败、按点自己跑：失败按策略重试、出错有统一兜底、到点自动做一次订单巡检。",
+    verify: {
+      label: "看两个工作流",
+      description: [
+        "打开 http://localhost:4111/workflows，能看到 after-sales 与 daily-check 两个工作流",
+        "这是一个会重试、会兜底、会定时自跑的客服工作流：步骤失败按配置重试；每天 9 点自动巡检一次，每单单独生成一条提醒",
+        "重试当场能验：让某一步抛错（例如在 classify 里临时写一句 throw），终端里会看到同一句错误再跑 3 次；三次都失败时 options.onError 被调一次、这次 run 的状态是 failed",
+      ],
+    },
+    concepts: [
+      "retryConfig — 工作流级重试：{ attempts, delay } 对所有步骤生效；attempts 是重试次数（实测 attempts: 3 → 首次失败后再跑 3 次，共 4 次执行），delay 是两次之间的毫秒间隔",
+      "retries — 步骤级重试次数，写在 createStep 里，会覆盖工作流级的配置",
+      "options.onError — 只在最终失败时调用：拿得到 error、status（failed / tripwire）与各步骤结果，适合统一发告警",
+      ".foreach — 对数组里每一项跑同一个步骤：前一步的输出必须是数组，步骤收到的是单个元素，跑完又拼回数组（后面接汇总步骤）",
+      "schedule — 在 createWorkflow 里写 { cron, timezone, inputData }，Mastra 启动时自动接管；同一个工作流照样能被手动运行",
+      "Background Tasks — 跑很久的任务不想占着请求就丢到后台执行（本课不展开，链接在右侧）",
+    ],
+    docLinks: [
+      { title: "Error Handling", href: "https://mastra.ai/docs/workflows/error-handling" },
+      { title: "Scheduled Workflows", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
+      { title: "Background Tasks", href: "https://mastra.ai/docs/harness/background-tasks" },
+      { title: "Schedules", href: "https://mastra.ai/docs/harness/schedules" },
+    ],
+    files: [
+      {
+        path: "src/mastra/workflows/after-sales.ts",
+        order: 1,
+        action: "edit",
+        hint: "在第 8 课的流程上加：重试策略与失败兜底（不要整体覆盖）",
+        code: `// ① 工作流定义里加 retryConfig（所有步骤通用）与 onError（最终失败的兜底）
+const afterSalesWorkflow = createWorkflow({
+  id: "after-sales",
+  inputSchema: z.object({ message: z.string() }),
+  outputSchema: z.object({ answer: z.string() }),
+  stateSchema,
+  // 失败重试 3 次，间隔 1 秒
+  retryConfig: { attempts: 3, delay: 1000 },
+  options: {
+    onError: async (errorInfo) => {
+      console.error("[after-sales] 失败：", errorInfo.error?.message);
+    },
+  },
+})
+  .then(classify)
+  .then(lookupOrder)
+  .then(judge)
+  .branch([
+    [async ({ inputData }) => inputData.needsApproval, approval],
+    [async ({ inputData }) => !inputData.needsApproval, autoPass],
+  ])
+  .then(reply)
+  .commit();
+
+// ② 只想给某一步单独设重试次数，就写在 createStep({ ... }) 里（覆盖工作流级）
+const lookupOrder = createStep({
+  id: "lookup-order",
+  description: "先按订单号、再按商品名查订单 —— 唯一命中才写进状态",
+  retries: 3,
+  // ...其余同上一课
+});
+`,
+      },
+      {
+        path: "src/mastra/workflows/daily-check.ts",
+        order: 2,
+        action: "create",
+        hint: "新建一个定时工作流：每天 9 点自动巡检，扫出快到窗口的订单后逐单生成提醒，最后汇总",
+        code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
+import { z } from "zod";
+import { orders } from "../data/orders";
+
+// 第一步：扫一遍订单，挑出快到 7 天 / 15 天售后窗口的
+// 输出故意做成数组 —— 下一步的 .foreach 要遍历它
+const scan = createStep({
+  id: "scan",
+  description: "扫一遍订单，挑出快到售后窗口的",
+  inputSchema: z.object({}),
+  outputSchema: z.array(
+    z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
+  ),
+  execute: async () =>
+    orders
+      .filter(
+        (item) =>
+          item.deliveredDaysAgo !== null &&
+          item.deliveredDaysAgo >= 5 &&
+          item.deliveredDaysAgo <= 15,
+      )
+      .map((item) => ({
+        orderId: item.orderId,
+        sku: item.sku,
+        days: item.deliveredDaysAgo ?? 0,
+      })),
+});
+
+// 每次只处理一单：.foreach 把上面的数组拆开，逐个喂给这个步骤
+const remind = createStep({
+  id: "remind",
+  description: "为一单生成一条待跟进提醒",
+  inputSchema: z.object({ orderId: z.string(), sku: z.string(), days: z.number() }),
+  outputSchema: z.object({ text: z.string() }),
+  execute: async ({ inputData }) => ({
+    text: inputData.orderId + " " + inputData.sku + " 已签收 " + inputData.days + " 天",
+  }),
+});
+
+// 汇总：.foreach 的产物又是数组，所以这一步收数组
+const collect = createStep({
+  id: "collect",
+  description: "把待跟进清单整理成一行摘要",
+  inputSchema: z.array(z.object({ text: z.string() })),
+  outputSchema: z.object({ count: z.number(), summary: z.string() }),
+  execute: async ({ inputData }) => {
+    const count = inputData.length;
+    return {
+      count,
+      summary:
+        count === 0
+          ? "今天没有快到窗口的订单"
+          : inputData.map((item) => item.text).join("；"),
+    };
+  },
+});
+
+export const dailyCheckWorkflow = createWorkflow({
+  id: "daily-check",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ count: z.number(), summary: z.string() }),
+  // 每天 9 点（上海时间）自动跑一次；工作流必须注册进 Mastra 实例 —— 实例启动时才把 schedule 同步给调度器
+  schedule: {
+    cron: "0 9 * * *",
+    timezone: "Asia/Shanghai",
+    inputData: {},
+  },
+})
+  .then(scan)
+  .foreach(remind)
+  .then(collect)
+  .commit();
+`,
+      },
+      {
+        path: "src/mastra/index.ts",
+        order: 3,
+        action: "edit",
+        hint: "把新工作流也注册进去 —— 带 schedule 的工作流必须注册进实例：实例启动时才认得它，并把 schedule 同步进调度存储（实测：注册后重启服务，mastra_schedules 里才出现这一行）",
+        code: `// ① 顶部加一行 import
+import { dailyCheckWorkflow } from "./workflows/daily-check";
+
+// ② workflows 里加一项
+workflows: { weatherWorkflow, afterSalesWorkflow, dailyCheckWorkflow },
+`,
+      },
+    ],
+  },
+  {
+    kind: "project",
+    slug: "workflow-app",
+    title: "工作流（四）：接到你的应用",
+    menuTitle: "工作流（四）",
+    summary:
+      "把工作流从 Studio 搬进你自己的页面：客户发消息触发流程，挂起时页面出按钮，点一下从断点继续跑完。",
+    verify: {
+      label: "打开自己的页面跑一遍",
+      description: [
+        "打开 http://localhost:3000/after-sales，输入「NX-1007 没拆封，我想退」：页面告诉你停在 approval，并出「批准退款 / 驳回」；点批准后出现客服回复",
+        "再试「遁天梭没拆封，想退」：同名两单里只有 NX-1001（签收 6 天）还在退货窗口内，页面就只列这一张卡片（商品 / 金额 / 签收天数 / 这单能怎么处理）—— 点它继续，客户全程不用报订单号",
+        "全程不打开 Studio；页面刷新也不影响 —— runId 在 storage 里，恢复只认它",
+      ],
+    },
+    concepts: [
+      "在应用中运行 — createRun() 获取一次运行，run.start({ inputData }) 执行至结束或挂起才返回；需要过程输出用 run.stream()",
+      "result.status — 判别式联合：success 取 result.result；suspended 取 result.suspended（挂起步骤路径）与 result.steps[step].suspendPayload；failed 取 result.error",
+      "run.resume({ step, resumeData }) — 配合 createRun({ runId }) 取回运行后恢复，恢复可发生在另一请求、另一进程甚至数日后",
+      "runId 的持久化 — 挂起状态写入 storage（第 6 课那套），否则进程重启后无法定位该运行，恢复失败",
+      "挂起内容与渲染的分工 — suspendSchema 决定内容，前端决定呈现方式；Studio 仅提供通用 JSON 输入",
+      "候选的来源 — 生产环境先按登录身份（resourceId）过滤订单，候选自然收敛；仍有多单则给出订单卡片供选择",
+      "生产注意事项 — 接口需鉴权、避免多实例重复触发、长流程不应在请求内同步等待",
+    ],
+    docLinks: [
+      { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
+      { title: "Suspend & Resume", href: "https://mastra.ai/docs/workflows/suspend-and-resume" },
+      { title: "Error Handling（重试与兜底）", href: "https://mastra.ai/docs/workflows/error-handling" },
+      { title: "Scheduled Workflows（定时）", href: "https://mastra.ai/docs/workflows/scheduled-workflows" },
+      { title: "Workers（丢到后台进程跑）", href: "https://mastra.ai/docs/deployment/workers" },
+    ],
+    files: [
+      {
+        path: "app/api/after-sales/route.ts",
+        order: 1,
+        action: "create",
+        hint: "新建接口：POST 触发工作流（跑到挂起或结束），PATCH 用 runId 从断点恢复 —— 触发与恢复是两个请求，中间隔着等客户的时间",
+        code: `import { NextResponse } from "next/server";
+import { mastra } from "@/src/mastra";
+
+// 只看我们用到的那几个字段
+type RunOutcome = {
+  status: string;
+  suspended?: string[][];
+  steps?: Record<string, { suspendPayload?: unknown }>;
+  result?: { answer?: string };
+  error?: { message?: string };
+};
+
+// 把一次运行的结果整理成页面要的两件事：
+// 跑完了 → 给回复；挂起了 → 给「停在哪一步、要问什么」
+function shape(outcome: RunOutcome) {
+  if (outcome.status === "suspended") {
+    // suspended 是挂起步骤的路径数组，顶层步骤取 [0][0] 就是步骤 id
+    const step = outcome.suspended?.[0]?.[0] ?? "";
+    return {
+      status: "suspended" as const,
+      step,
+      // 那一步 suspend({...}) 写出来给人看的内容（问题、候选项、金额…）
+      ask: outcome.steps?.[step]?.suspendPayload,
+    };
+  }
+  if (outcome.status === "success") {
+    return {
+      status: "success" as const,
+      answer: outcome.result?.answer ?? "",
+    };
+  }
+  return {
+    status: "failed" as const,
+    error: outcome.error?.message ?? \`运行结束：\${outcome.status}\`,
+  };
+}
+
+// POST：客户发一条消息 → 跑工作流（一路跑到挂起或结束）
+export async function POST(req: Request) {
+  const { message } = await req.json();
+  // getWorkflow 的参数是 index.ts 里 workflows 注册的那个 key（不是工作流的 id）
+  const workflow = mastra.getWorkflow("afterSalesWorkflow");
+  const run = await workflow.createRun();
+  const result = await run.start({ inputData: { message } });
+  // runId 一并返回给页面：后面恢复那次运行全靠它
+  return NextResponse.json({ runId: run.runId, ...shape(result) });
+}
+
+// PATCH：客户或主管答完了 → 拿 runId 把那次运行取回来，从断点继续
+// 触发与恢复是两个请求，中间可能隔几分钟、也可能在另一个进程里恢复
+export async function PATCH(req: Request) {
+  const { runId, step, resumeData } = await req.json();
+  const workflow = mastra.getWorkflow("afterSalesWorkflow");
+  const run = await workflow.createRun({ runId });
+  const result = await run.resume({ step, resumeData });
+  return NextResponse.json({ runId: run.runId, ...shape(result) });
+}`,
+      },
+      {
+        path: "app/after-sales/page.tsx",
+        order: 2,
+        action: "create",
+        hint: "新建页面：客户消息 → 触发；挂起时按步骤渲染 —— approval 出「批准 / 驳回」按钮，缺信息出候选订单卡片（点卡片即继续，输入框仅作兜底）",
+        code: `"use client";
+
+import { useState } from "react";
+
+// 工作流挂起时会写出一段给人看的内容，形状由各个步骤的 suspendSchema 决定
+type Ask = {
+  question?: string;
+  reason?: string;
+  orderId?: string;
+  candidates?: {
+    orderId: string;
+    sku: string;
+    price: number;
+    deliveredDaysAgo: number | null;
+  }[];
+};
+
+type Outcome =
+  | { runId: string; status: "suspended"; step: string; ask: Ask }
+  | { runId: string; status: "success"; answer: string }
+  | { runId: string; status: "failed"; error?: string };
+
+export default function AfterSalesPage() {
+  const [message, setMessage] = useState("NX-1007 没拆封，我想退");
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [reply, setReply] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // 触发：客户发一条消息，工作流一路跑到挂起或结束
+  async function send() {
+    setBusy(true);
+    setOutcome(null);
+    setReply("");
+    const res = await fetch("/api/after-sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    setOutcome(await res.json());
+    setBusy(false);
+  }
+
+  // 恢复：把答案交回去，从挂起的那一步继续跑
+  async function resume(resumeData: unknown) {
+    if (!outcome || outcome.status !== "suspended") return;
+    setBusy(true);
+    const res = await fetch("/api/after-sales", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId: outcome.runId, step: outcome.step, resumeData }),
+    });
+    setOutcome(await res.json());
+    setReply("");
+    setBusy(false);
+  }
+
+  const suspended = outcome?.status === "suspended";
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
+      <header>
+        <h1 className="text-lg font-medium text-zinc-800">虚拟宇宙公司 · 售后处理台</h1>
+        <p className="text-[13px] text-zinc-400">
+          客户发消息 → 工作流判定；需要人拍板时它会停住，等你点。
+        </p>
+      </header>
+
+      {/* 客户消息 */}
+      <section className="rounded-2xl border border-zinc-200 p-4">
+        <label className="text-xs text-zinc-400">客户原话</label>
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          rows={2}
+          className="mt-1 w-full resize-none rounded-xl bg-zinc-50 px-3 py-2 text-[15px] leading-7 text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
+        />
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={send}
+            disabled={busy || !message.trim()}
+            className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+          >
+            {busy ? "处理中…" : "发送"}
+          </button>
+        </div>
+      </section>
+
+      {/* 运行结果 */}
+      {outcome && (
+        <section className="space-y-3">
+          {outcome.status === "success" && (
+            <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-[15px] leading-7 text-zinc-800 ring-1 ring-zinc-100">
+              {outcome.answer}
+            </div>
+          )}
+
+          {outcome.status === "suspended" && outcome.step === "approval" && (
+            <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <p className="text-[13px] text-amber-700">超出客服权限，等主管批准</p>
+              <p className="text-[15px] leading-7 text-zinc-800">{outcome.ask.reason}</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => resume({ approved: true })}
+                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+                >
+                  批准退款
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => resume({ approved: false })}
+                  className="rounded-xl px-4 py-1.5 text-sm text-zinc-600 ring-1 ring-zinc-300 disabled:opacity-40"
+                >
+                  驳回
+                </button>
+              </div>
+            </div>
+          )}
+
+          {outcome.status === "suspended" && outcome.step !== "approval" && (
+            <div className="space-y-3 rounded-2xl border border-zinc-200 p-4">
+              {/* 产品里这一步不该让客户背订单号：候选直接出卡片，点一下就走 */}
+              <p className="text-[15px] text-zinc-800">请问是哪一单？</p>
+              {outcome.ask.candidates && outcome.ask.candidates.length > 0 ? (
+                <div className="space-y-2">
+                  {outcome.ask.candidates.map((item) => (
+                    <button
+                      key={item.orderId}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => resume({ reply: item.orderId })}
+                      className="flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-left ring-1 ring-zinc-200 hover:bg-zinc-50 disabled:opacity-40"
+                    >
+                      <span className="text-[15px] text-zinc-700">
+                        {item.sku} · {item.price} 黑龙币
+                      </span>
+                      <span className="text-xs text-zinc-400">
+                        {item.deliveredDaysAgo === null
+                          ? "未签收"
+                          : \`签收 \${item.deliveredDaysAgo} 天\`}{" "}
+                        · {item.orderId}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[13px] text-zinc-400">{outcome.ask.question}</p>
+              )}
+              {/* 兜底：客户自己报了订单号（或说了别的线索）时走这里 */}
+              <div className="flex gap-2">
+                <input
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  placeholder="也可以直接说订单号，例如 NX-1007"
+                  className="flex-1 rounded-xl bg-zinc-50 px-3 py-2 text-[15px] text-zinc-800 outline-none ring-1 ring-zinc-100 focus:ring-zinc-300"
+                />
+                <button
+                  type="button"
+                  disabled={busy || !reply.trim()}
+                  onClick={() => resume({ reply })}
+                  className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+                >
+                  继续
+                </button>
+              </div>
+            </div>
+          )}
+
+          {outcome.status === "failed" && (
+            <p className="text-[13px] text-red-500">运行失败：{outcome.error}</p>
+          )}
+
+          <p className="text-xs text-zinc-300">
+            runId {outcome.runId} · 当前状态 {outcome.status}
+            {suspended ? \` · 停在 \${outcome.step}\` : ""}
+          </p>
+        </section>
+      )}
+    </main>
+  );
+}`,
+      },
+    ],
+  },
+
+  {
+    kind: "project",
     slug: "rag-knowledge",
     title: "RAG：把售后政策做成知识库",
     menuTitle: "RAG",
@@ -2408,13 +2902,15 @@ export async function approveRun(runId: string, approved: boolean) {
       "政策原文切块、向量化、入库，再给 agent 一个检索工具：答政策问题时引用条款，而不是凭印象说。",
     install: {
       command: "pnpm add @mastra/rag",
-      description: "在 my-mastra-app 目录执行 —— 切块（MDocument）和检索工具（createVectorQueryTool）都在 @mastra/rag 里；嵌入模型沿用第 5 课的硅基流动，不用再配 key。",
+      description: "在 my-mastra-app 目录执行 —— 切块（MDocument）和检索工具（createVectorQueryTool）都在 @mastra/rag 里；嵌入模型直接复用第 5 课建的 src/mastra/embedder.ts（不再新建模块，也不用再配 key）。",
     },
     verify: {
-      label: "去 Studio 问政策",
+      label: "点按钮入库，再问政策",
       description: [
-        "先打开 http://localhost:4111/workflows 手动跑一次 ingest-policies，把政策原文入库",
-        "这是一个带政策知识库的客服 agent：答政策问题时先检索条款，回答里会说清依据 P1 还是 P2",
+        "打开 http://localhost:3001/knowledge —— 页面会告诉你现在有没有入库；没入库就点「初始化知识库」，几秒后显示「已入库：7 个块（1024 维）」",
+        "然后回聊天页问「S 级飞刀用了四年、梭体核心坏了怎么办」：agent 先检索政策原文，回答里说清依据哪一条",
+        "改了 src/mastra/knowledge/policies.ts（政策原文）就回这个页面点一次「重建知识库」—— 入库 = 先删旧索引再写，重复点不会堆重复段落",
+        "注意：浏览器直接打开 /api/knowledge/ingest 只会看到状态（GET），入库是页面按钮发的 POST",
       ],
     },
     concepts: [
@@ -2422,7 +2918,9 @@ export async function approveRun(runId: string, approved: boolean) {
       "chunk — 切块参数 { strategy, maxSize, overlap, separators }；块过大检索粗、过小丢上下文",
       "embedMany — 批量向量化（ai 包）：embedMany({ model, values }) → { embeddings }；维度必须与建索引时一致",
       "createIndex / upsert — 先建索引（indexName、dimension、metric）再写入向量；metadata 携带条款号以便给出来源",
+      "upsert 是追加不是覆盖 — 重复入库会把同一个块堆很多份；所以入库前先 deleteIndex，让「重跑一次」等于「重建索引」",
       "createVectorQueryTool — 将检索封装为工具交给 agent：{ vectorStoreName, indexName, model }；vectorStoreName 需在 Mastra 实例的 vectors 中注册",
+      "入库入口放应用侧 — 用自己应用的页面/接口触发（/knowledge 页面上的按钮，或 POST /api/knowledge/ingest），不要靠 Studio 手动跑：入库与检索必须在同一个进程、同一个库，否则查询不报错但永远为空",
     ],
     docLinks: [
       { title: "RAG 总览", href: "https://mastra.ai/reference/rag/overview" },
@@ -2432,31 +2930,8 @@ export async function approveRun(runId: string, approved: boolean) {
     ],
     files: [
       {
-        path: "src/mastra/knowledge/embedder.ts",
-        order: 1,
-        action: "create",
-        hint: "把嵌入模型与索引名抽出来：入库和检索两处要用同一份",
-        code: `import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-
-// 嵌入模型沿用第 5 课的硅基流动：中文好用，也不用在本地下载模型
-const siliconflow = createOpenAICompatible({
-  name: "siliconflow",
-  baseURL: "https://api.siliconflow.cn/v1",
-  apiKey: process.env.SILICONFLOW_API_KEY,
-});
-
-export const policyEmbedder = siliconflow.embeddingModel(
-  "BAAI/bge-large-zh-v1.5",
-);
-
-// 向量索引名与模型维度：入库和检索两处都要用同一个值
-export const POLICY_INDEX = "policies";
-export const POLICY_EMBED_DIM = 1024;
-`,
-      },
-      {
         path: "src/mastra/knowledge/policies.ts",
-        order: 2,
+        order: 1,
         action: "create",
         hint: "政策原文 —— 检索的唯一事实来源（对应 docs/scenario.md 的 P1–P6）",
         code: `// 售后政策原文：这是唯一的事实来源，检索工具只会引用它
@@ -2491,11 +2966,14 @@ export const policyDocs: { title: string; text: string }[] = [
     text: "耗材说明：生命之水属于耗材，退货与换新照常适用（P1 / P2），但不适用修复（P3），因为一次性消耗品没有维修价值。",
   },
 ];
+
+// 向量索引名：入库（ingest-policies）与检索（policy-search）必须用同一个值
+export const POLICY_INDEX = "policies";
 `,
       },
       {
         path: "src/mastra/workflows/ingest-policies.ts",
-        order: 3,
+        order: 2,
         action: "create",
         hint: "入库工作流：切块 → 向量化 → 建索引 → 写入（在 Studio 里跑一次即可）",
         code: `import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -2503,18 +2981,14 @@ import { LibSQLVector } from "@mastra/libsql";
 import { MDocument } from "@mastra/rag";
 import { embedMany } from "ai";
 import { z } from "zod";
-import {
-  POLICY_EMBED_DIM,
-  POLICY_INDEX,
-  policyEmbedder,
-} from "../knowledge/embedder";
-import { policyDocs } from "../knowledge/policies";
+import { embedder, EMBED_DIM } from "../embedder";
+import { DB_URL } from "../db";
+import { policyDocs, POLICY_INDEX } from "../knowledge/policies";
 
-// 向量和消息存在同一个库文件里
-// （storage 里那行 url：多进程并行时要写绝对路径，否则各建一份库）
+// 向量和消息存在同一个库文件里（路径来自 src/mastra/db.ts：绝对路径，入库与检索必然同一个库）
 const vectorStore = new LibSQLVector({
   id: "knowledgeBase",
-  url: "file:./mastra.db",
+  url: DB_URL,
 });
 
 const ingest = createStep({
@@ -2543,14 +3017,20 @@ const ingest = createStep({
 
     // ② 向量化：模型输出维度必须和建索引时一致
     const { embeddings } = await embedMany({
-      model: policyEmbedder,
+      model: embedder,
       values: chunks,
     });
 
-    // ③ 建索引 + 写入（索引已存在时会报错，重复入库前先删旧索引或换个索引名）
+    // ③ 重建索引：先删旧的、再建新的、再写入。
+    //    实测（2026-10-05）：createIndex 对已存在的索引不报错，但 upsert 是**追加** ——
+    //    重复入库会让同一个块堆很多份，topK 里全是重复段落（查一次 7 个块变 49 条）。
+    //    所以入库就按「重建」写：删 → 建 → 写。
+    await vectorStore.deleteIndex({ indexName: POLICY_INDEX }).catch(() => {
+      // 第一次入库时索引还不存在，删失败是正常的
+    });
     await vectorStore.createIndex({
       indexName: POLICY_INDEX,
-      dimension: POLICY_EMBED_DIM,
+      dimension: EMBED_DIM,
       metric: "cosine",
     });
     await vectorStore.upsert({
@@ -2569,46 +3049,40 @@ export const ingestPoliciesWorkflow = createWorkflow({
   outputSchema: z.object({ chunks: z.number() }),
 })
   .then(ingest)
-  .commit();
-`,
+  .commit();`,
       },
       {
         path: "src/mastra/tools/policy-search.ts",
-        order: 4,
+        order: 3,
         action: "create",
         hint: "把检索包成工具，交给 agent",
         code: `import { createVectorQueryTool } from "@mastra/rag";
-import { POLICY_INDEX, policyEmbedder } from "../knowledge/embedder";
+import { embedder } from "../embedder";
+import { POLICY_INDEX } from "../knowledge/policies";
 
 // 把检索包成一个工具：agent 只有遇到政策问题时才会调它
 // vectorStoreName 对应 Mastra 实例里注册的向量库名字（这里是 knowledgeBase）
 export const policySearch = createVectorQueryTool({
   vectorStoreName: "knowledgeBase",
   indexName: POLICY_INDEX,
-  model: policyEmbedder,
+  model: embedder,
 });
 `,
       },
       {
         path: "src/mastra/agents/support-agent.ts",
-        order: 5,
+        order: 4,
         action: "replace",
         hint: "把检索工具挂到 agent 上，并在提示词里要求「说清依据哪一条」",
         code: `import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
 import { LibSQLVector } from "@mastra/libsql";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 import { listProducts, findOrders } from "../tools/lookup-tool";
 import { checkReturnEligibility } from "../tools/return-tool";
 import { policySearch } from "../tools/policy-search";
-
-// 嵌入模型走硅基流动的 OpenAI 兼容端点：中文效果好，也不用在本地下载模型
-const siliconflow = createOpenAICompatible({
-  name: "siliconflow",
-  baseURL: "https://api.siliconflow.cn/v1",
-  apiKey: process.env.SILICONFLOW_API_KEY,
-});
+import { embedder } from "../embedder";
+import { DB_URL } from "../db";
 
 const customerProfile = z.object({
   sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
@@ -2632,30 +3106,34 @@ export const supportAgent = new Agent({
   model: "deepseek/deepseek-flash",
   tools: { listProducts, findOrders, checkReturnEligibility, policySearch },
   memory: new Memory({
-    vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
-    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
+    // 向量和消息存同一个本地库文件（路径来自 src/mastra/db.ts，绝对路径）
+    vector: new LibSQLVector({ id: "mastra-vector", url: DB_URL }),
+    // 嵌入模型：共用 src/mastra/embedder.ts 里那一个（硅基流动 bge-large-zh-v1.5，1024 维，中文）
+    embedder,
     options: {
+      // 条数上限 + token 预算，两个都写就是双重上限
       lastMessages: 20,
       messageHistory: { maxTokens: 8000 },
+      // 语义召回：跨对话捞回相关旧消息；topK 召回几条、messageRange 每条前后带几条、scope 跨不跨对话
       semanticRecall: { topK: 3, messageRange: 2, scope: "resource" },
       workingMemory: { enabled: true, schema: customerProfile },
     },
   }),
-});
-`,
+});`,
       },
       {
         path: "src/mastra/index.ts",
-        order: 6,
+        order: 5,
         action: "edit",
         hint: "注册向量库与入库工作流（vectorStoreName 要和这里注册的名字一致）",
         code: `// ① 顶部加 import
 import { LibSQLVector } from "@mastra/libsql";
 import { ingestPoliciesWorkflow } from "./workflows/ingest-policies";
+import { DB_URL } from "./db";
 
 // ② 在 new Mastra({ ... }) 里加两项
 vectors: {
-  knowledgeBase: new LibSQLVector({ id: "knowledgeBase", url: "file:./mastra.db" }),
+  knowledgeBase: new LibSQLVector({ id: "knowledgeBase", url: DB_URL }),
 },
 workflows: {
   weatherWorkflow,
@@ -2663,6 +3141,154 @@ workflows: {
   ingestPoliciesWorkflow,
 },
 `,
+      },
+      {
+        path: "app/api/knowledge/ingest/route.ts",
+        order: 6,
+        action: "create",
+        hint: "入库接口：GET 看状态、POST 触发入库（浏览器直接打开只有 GET，不会入库）；跑在应用进程里，向量落进应用正在用的那个库",
+        code: `import { NextResponse } from "next/server";
+import { LibSQLVector } from "@mastra/libsql";
+import { mastra } from "@/src/mastra";
+import { DB_URL } from "@/src/mastra/db";
+import { POLICY_INDEX } from "@/src/mastra/knowledge/policies";
+
+// GET：看一眼知识库现在什么状态（有没有入库、几个块）。
+// 注意：浏览器直接打开这个地址只会走到这里（GET），**不会**触发入库 —— 入库要 POST。
+export async function GET() {
+  const store = new LibSQLVector({ id: "knowledgeBase", url: DB_URL });
+  try {
+    const stats = await store.describeIndex({ indexName: POLICY_INDEX });
+    return NextResponse.json({
+      index: POLICY_INDEX,
+      ingested: stats.count > 0,
+      chunks: stats.count,
+      dimension: stats.dimension,
+    });
+  } catch {
+    return NextResponse.json({ index: POLICY_INDEX, ingested: false, chunks: 0 });
+  }
+}
+
+// POST：入库（向量化）—— 跑在应用这个进程里，向量就直接落进应用正在用的那个库。
+// 它是「重建」语义：先删旧索引 → 再建 → 再写，所以重复跑不会堆重复段落。
+// 真实项目里这里还会加鉴权，或者挂成定时任务（政策更新后自动重跑）。
+export async function POST() {
+  const workflow = mastra.getWorkflow("ingestPoliciesWorkflow");
+  const run = await workflow.createRun();
+  const result = await run.start({ inputData: {} });
+
+  const outcome = result as {
+    status: string;
+    result?: { chunks?: number };
+    error?: { message?: string };
+  };
+
+  if (outcome.status !== "success") {
+    return NextResponse.json(
+      { ok: false, status: outcome.status, error: outcome.error?.message ?? "入库失败" },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, chunks: outcome.result?.chunks ?? 0 });
+}`,
+      },
+      {
+        path: "app/knowledge/page.tsx",
+        order: 7,
+        action: "create",
+        hint: "知识库页：一个按钮就把「初始化 / 重建向量」做完 —— 学员不用会 curl，也不用进 Studio",
+        code: `"use client";
+
+import { useEffect, useState } from "react";
+
+type Status = { ingested: boolean; chunks: number; dimension?: number };
+
+// 知识库页：把「初始化向量」做成一个按钮 —— 学员不用会 curl，也不用去 Studio。
+// 点一下 = POST /api/knowledge/ingest = 把 knowledge/policies.ts 的政策原文
+// 切块 → 向量化 → 写进应用正在用的那个库（重建语义：先删旧索引再写）。
+export default function KnowledgePage() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  // 首次打开先读一次状态（有没有入库、几个块）
+  useEffect(() => {
+    fetch("/api/knowledge/ingest")
+      .then((res) => res.json())
+      .then((data) => setStatus(data))
+      .catch(() => {});
+  }, []);
+
+  async function refresh() {
+    const res = await fetch("/api/knowledge/ingest");
+    setStatus(await res.json());
+  }
+
+  async function ingest() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/knowledge/ingest", { method: "POST" });
+      const data = await res.json();
+      setMessage(
+        data.ok
+          ? \`入库完成：\${data.chunks} 个政策块已写入向量库\`
+          : \`入库失败：\${data.error ?? "未知错误"}\`,
+      );
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-12">
+      <header>
+        <h1 className="text-lg font-medium text-zinc-800">虚拟宇宙公司 · 售后知识库</h1>
+        <p className="text-[13px] text-zinc-400">
+          把政策原文向量化入库 —— agent 答政策问题时，会先来这里检索条款。
+        </p>
+      </header>
+
+      <section className="rounded-2xl border border-zinc-200 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-zinc-400">当前状态</p>
+            <p className="mt-1 text-[15px] text-zinc-800">
+              {status
+                ? status.ingested
+                  ? \`已入库：\${status.chunks} 个块\${status.dimension ? \`（\${status.dimension} 维）\` : ""}\`
+                  : "还没入库 —— 检索会是空的，先点右边这个按钮"
+                : "读取中…"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={ingest}
+            disabled={busy}
+            className="rounded-xl bg-zinc-800 px-4 py-1.5 text-sm text-white disabled:opacity-40"
+          >
+            {busy ? "入库中…" : status?.ingested ? "重建知识库" : "初始化知识库"}
+          </button>
+        </div>
+
+        {message && (
+          <p className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 text-[13px] text-zinc-600 ring-1 ring-zinc-100">
+            {message}
+          </p>
+        )}
+
+        <ul className="mt-3 space-y-1 text-[13px] leading-6 text-zinc-500">
+          <li>· 入库跑在你自己的应用进程里，所以向量落进应用正在用的那个库（跟对话检索同一个库）</li>
+          <li>· 重复点是安全的：入库 = 重建（先删旧索引再写），不会堆出重复段落</li>
+          <li>· 改了 <code className="text-zinc-700">src/mastra/knowledge/policies.ts</code> 就要回来点一次</li>
+        </ul>
+      </section>
+    </main>
+  );
+}`,
       },
     ],
   },
@@ -2851,7 +3477,7 @@ observability: new Observability({
 import type { MastraDBMessage } from "@mastra/core/memory";
 
 // 自定义输入处理器：客户误发手机号 / 邮箱时，先把它们换成占位符再进模型
-// （第 12 课的原则：不索要、不回显、也不让它进入上下文）
+// （第 14 课的原则：不索要、不回显、也不让它进入上下文）
 export class MaskContactInfo implements Processor {
   id = "mask-contact-info";
 
@@ -2890,18 +3516,13 @@ export class MaskContactInfo implements Processor {
 import { Memory } from "@mastra/memory";
 import { LibSQLVector } from "@mastra/libsql";
 import { ModerationProcessor, PromptInjectionDetector } from "@mastra/core/processors";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { z } from "zod";
 import { listProducts, findOrders } from "../tools/lookup-tool";
 import { checkReturnEligibility } from "../tools/return-tool";
 import { policySearch } from "../tools/policy-search";
+import { embedder } from "../embedder";
+import { DB_URL } from "../db";
 import { MaskContactInfo } from "../processors/mask-contact";
-
-const siliconflow = createOpenAICompatible({
-  name: "siliconflow",
-  baseURL: "https://api.siliconflow.cn/v1",
-  apiKey: process.env.SILICONFLOW_API_KEY,
-});
 
 const customerProfile = z.object({
   sku: z.string().optional().describe("涉及的装备或药剂，例如 S 级飞刀"),
@@ -2934,8 +3555,8 @@ export const supportAgent = new Agent({
     new ModerationProcessor({ model: "deepseek/deepseek-flash" }),
   ],
   memory: new Memory({
-    vector: new LibSQLVector({ id: "mastra-vector", url: "file:./mastra.db" }),
-    embedder: siliconflow.embeddingModel("BAAI/bge-large-zh-v1.5"),
+    vector: new LibSQLVector({ id: "mastra-vector", url: DB_URL }),
+    embedder,
     options: {
       lastMessages: 20,
       messageHistory: { maxTokens: 8000 },

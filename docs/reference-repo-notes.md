@@ -40,7 +40,7 @@
    → 我们的第 3 课会明确：能用代码判断的规则别写在 instructions 里，工具里放确定性函数，并为它写**不依赖模型**的测试。
 
 2. **结构化 Working Memory + 每类信息独立 schema**（阶段 1、6）
-   → 第 4 课用"结构化工作记忆"讲法；第 12 课讲"事实 / 授权 / 联系方式分开存"，授权记录必须含**用途版本 + 范围 + 用户原话**，不能是单个布尔。
+   → 第 4 课用"结构化工作记忆"讲法；第 14 课讲"事实 / 授权 / 联系方式分开存"，授权记录必须含**用途版本 + 范围 + 用户原话**，不能是单个布尔。
 
 3. **workflow 负责编排，agent 负责对话**（阶段 3、4）
    → 第 7 课的主线；且强调 workflow 不等待自然语言答案，`responsePlan` 保持确定。
@@ -49,10 +49,10 @@
    → 第 8 课会点名这套：`ask_user` 只负责"暂停 + 展示控件（text / single_select / multi_select）+ 返回答案"，**不负责业务判断、不直接写记忆**；题型由确定性字段映射决定，未配置字段默认文本框（避免模型编造选项）。
 
 5. **确定性 Scorer + 固定回归案例集**（阶段 5）
-   → 第 10 课照这个思路：先写**不调用 judge 模型**的规则级 scorer（省钱、可回归），固定案例集可版本控制、也可迁到 Studio Dataset；`Scorer 打分 / Trace 定位 / Dataset 存题` 三者分工要讲清。
+   → 第 12 课照这个思路：先写**不调用 judge 模型**的规则级 scorer（省钱、可回归），固定案例集可版本控制、也可迁到 Studio Dataset；`Scorer 打分 / Trace 定位 / Dataset 存题` 三者分工要讲清。
 
 6. **"排查靠 Trace，不靠模型自述"**（阶段 6）
-   → 第 11 课的立论：把 `reasoning` 设为 none，排查看 Trace 里的工具入参出参、workflow 分支、working memory，而不是依赖模型的自然语言推理。
+   → 第 13 课的立论：把 `reasoning` 设为 none，排查看 Trace 里的工具入参出参、workflow 分支、working memory，而不是依赖模型的自然语言推理。
 
 ## 四、它没覆盖、我们补上的能力
 
@@ -60,11 +60,11 @@
 |---|---|---|
 | 接入前端（`handleChatStream()` + AI SDK UI，页面自己写） | 第 6 课 | 它只在 Studio 里验证；多数人要交付产品界面 |
 | Semantic Recall / Observational Memory / Memory Processors / 多用户线程隔离 | 第 5 课 | 它只用 thread Working Memory，没有长期记忆与跨会话召回 |
-| 在应用里触发与恢复工作流（`createRun()` / `start()` / `resume()`） | 不进主线 | 它只在 Studio 里跑；多数人要让自己的前端/后台来触发 |
-| 定时 / 后台任务（Scheduled Workflows、Background Tasks、Schedules） | 延伸阅读（第 8 课右侧链接） | 模板自带 schedules，但阶段里没讲 |
-| Guardrails 与 Processors | 第 12 课 | 它把注入防护放到阶段 9 的清单里，缺专门一课 |
-| Evals 的 CI / Datasets / Gates / Experiments | 第 10 课 | 它到"scorer + 固定案例"为止，没进 CI 门禁 |
-| Auth（Simple / JWT / FGA）与部署形态（Workflow Runners 等） | 第 13 课 | 它只在阶段 9 列了要求，没有具体实现路线 |
+| 在应用里触发与恢复工作流（`createRun()` / `start()` / `resume()`） | 第 10 课 | 它只在 Studio 里跑；多数人要让自己的前端/后台来触发 |
+| 定时 / 后台任务（Scheduled Workflows、Background Tasks、Schedules） | 第 9 课 | 模板自带 schedules，但阶段里没讲 |
+| Guardrails 与 Processors | 第 14 课 | 它把注入防护放到阶段 9 的清单里，缺专门一课 |
+| Evals 的 CI / Datasets / Gates / Experiments | 第 12 课 | 它到"scorer + 固定案例"为止，没进 CI 门禁 |
+| Auth（Simple / JWT / FGA）与部署形态（Workflow Runners 等） | 第 15 课 | 它只在阶段 9 列了要求，没有具体实现路线 |
 | 多 provider / fallback / Gateways | 第 2 课 | 它固定用 DeepSeek（+ 模板的 Google），没讲路由与降级 |
 | Subagents / MCP / Channels / Sandbox | 进阶 A1–A5 | 属于编排之外的外延能力 |
 
