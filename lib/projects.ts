@@ -1582,7 +1582,7 @@ function SendButton({
       label: "去 Studio 跑流程",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
-        "试「NX-1007 没拆封，我想退」：判成可退款（未拆封 + 签收 3 天，在 7 天窗口内）",
+        "试「我买的遁天梭没拆封，想退」：同名商品有两单，流程不猜，在回复里问客户是哪一单",
         "这是一个把售后处理串成流程的客服工作流：意图分类、查订单、判定、生成回复按步执行；退货走售后政策、物流回运输状态、咨询直接回答，每步的输入输出都能查到",
       ],
     },
@@ -2056,8 +2056,8 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       label: "去 Studio 试审批",
       description: [
         "打开 http://localhost:4111/workflows，选 after-sales",
-        "跑「NX-1007 没拆封，我想退」：判为可退款且金额超出客服权限，会挂起等主管批；批准后从断点继续跑完",
-        "跑「生命之水没拆封，我想退」：同名商品有多单，会先挂在 lookup-order 问客户要订单号；补一句 NX-1007 再 resume，从断点继续判到审批",
+        "跑一条判成退款的请求（数据里符合条件的是 NX-1001 与 NX-1007，未拆封且签收在 7 天内）：金额超出客服权限，会挂起等主管批；批准后从断点继续跑完",
+        "跑「生命之水没拆封，我想退」：同名商品有多单，会先挂在 lookup-order 并列出候选，在 Resume Data 里给出其中一个订单号后继续判到审批",
         "其余判定（换新 / 维修 / 拒绝）直接放行，不会挂起",
       ],
     },
@@ -2363,10 +2363,9 @@ export async function approveRun(runId: string, approved: boolean) {
     verify: {
       label: "打开自己的页面跑一遍",
       description: [
-        "打开 http://localhost:3000/after-sales，输入「NX-1007 没拆封，我想退」",
-        "页面出现「批准退款 / 驳回」两个按钮 —— 那是工作流挂起等主管，不是页面自己编的",
-        "点「批准退款」→ 页面出现客服回复；全程不打开 Studio",
-        "（可选）输入「生命之水没拆封，我想退」：页面列出三张候选订单，点一张再继续跑到审批",
+        "打开 http://localhost:3000/after-sales，输入「我买的遁天梭没拆封，想退」",
+        "页面列出两张候选订单（商品 / 金额 / 签收天数），点「签收 6 天」那张继续 —— 客户全程不需要报订单号",
+        "流程随后挂起，页面出现「批准退款 / 驳回」；点批准后出现客服回复，全程不打开 Studio",
       ],
     },
     concepts: [
@@ -2454,7 +2453,7 @@ export async function PATCH(req: Request) {
         path: "app/after-sales/page.tsx",
         order: 2,
         action: "create",
-        hint: "新建页面：客户消息 → 触发；挂起时按步骤渲染 —— approval 出「批准 / 驳回」按钮，缺信息出候选订单与输入框；点一下调 PATCH 继续",
+        hint: "新建页面：客户消息 → 触发；挂起时按步骤渲染 —— approval 出「批准 / 驳回」按钮，缺信息出候选订单卡片（点卡片即继续，输入框仅作兜底）",
         code: `"use client";
 
 import { useState } from "react";
