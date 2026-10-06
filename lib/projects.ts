@@ -364,11 +364,11 @@ DEEPSEEK_API_KEY：<key>（只在本地写进 .env，回复里不要回显）
       ],
     },
     concepts: [
-      "`Agent` — `new Agent({ id, name, instructions, model })` 定义 agent；id 用于注册引用",
+      "`Agent` — 定义一个 agent；id 用于注册引用",
       "`instructions` — 长期遵循的行为准则",
       "`Memory` — 会话记忆：多轮对话可用",
       "`lastMessages` — 每轮带入上下文的最近消息条数",
-      "`Mastra` — `new Mastra({ agents })` 应用入口；注册过的 agent 才出现在 Studio",
+      "`Mastra` — 应用入口；注册过的 agent 才出现在 Studio",
     ],
     docLinks: [
       { title: "Agents", href: "https://mastra.ai/docs/agents" },
@@ -854,7 +854,7 @@ export const supportAgent = new Agent({
       "`semanticRecall` — 每轮按语义召回历史消息（默认关闭）",
       "`vector` / `embedder` — 向量库（`LibSQLVector`）与向量化模型（`BAAI/bge-large-zh-v1.5`）",
       "`topK` / `messageRange` — 召回条数 / 命中消息前后各带几条",
-      "`messageHistory.maxTokens` — 按 token 预算裁剪历史",
+      "`maxTokens`（在 `messageHistory` 里）— 按 token 预算裁剪历史",
       "`embedder.ts` / `db.ts` — 嵌入模型与库路径各只建一处；`DB_URL` 用绝对路径，两个进程才共用一份库",
     ],
     docLinks: [
@@ -1002,7 +1002,7 @@ export const supportAgent = new Agent({
       "`handleChatStream` — 把一次 agent 运行转成 AI SDK 消息流",
       "`getMemory` / `toAISdkMessages` — 刷新时读回历史、转成 UIMessage 水合",
       "`useChat` / `DefaultChatTransport` — 指定 `/api/generate`：POST 发消息、GET 水合、DELETE 清空",
-      "`UIMessage.parts` — 消息是 part 数组：text / reasoning / tool-*",
+      "`message.parts` — 消息是 part 数组：text / reasoning / tool-*",
       "`sendReasoning` — handleChatStream 的选项，默认 false",
     ],
     docLinks: [
@@ -1629,11 +1629,11 @@ function SendButton({
       ],
     },
     concepts: [
-      "`createWorkflow` — 定义流程：id / 输入输出 schema，`.then()` 串联，`.commit()` 收尾",
+      "`createWorkflow` — 定义流程：id / 输入输出 schema，最后 `.commit()` 收尾",
       "`createStep` — 一个步骤一件事，自声明输入输出 schema",
       "`stateSchema` / `setState` — 所有步骤共享的状态",
-      "`mastra.getAgentById(…)` — 步骤里取专用 agent",
-      "`.then()` — 上一步 output 即下一步 inputData（`.branch` 见第 8 课）",
+      "`getAgentById` — 步骤里取专用 agent",
+      "`then` — 上一步 output 即下一步 inputData（条件分支见第 8 课）",
     ],
     docLinks: [
       { title: "Workflows 总览", href: "https://mastra.ai/docs/workflows/overview" },
@@ -2100,9 +2100,9 @@ workflows: { weatherWorkflow, afterSalesWorkflow },
       ],
     },
     concepts: [
-      "`.branch` — 条件分支：`[[条件, 步骤], …]`，两条路的 schema 必须一致",
+      "`.branch` — 条件分支：条件与步骤成对；两条路的 schema 必须一致",
       "`suspend` / `suspendSchema` / `resumeSchema` — 步骤内挂起，等外部恢复",
-      "`run.resume({ step, resumeData })` — 从挂起点恢复运行",
+      "`resume` — 从挂起点恢复运行",
       "`createRun({ runId })` — 凭 runId 取回运行再恢复",
     ],
     docLinks: [
@@ -2886,11 +2886,11 @@ export default function KnowledgePage() {
       ],
     },
     concepts: [
-      "`runEvals({ target, data, gates, scorers })` — 逐个问案例，再打分",
+      "`runEvals` — 逐个问案例，再打分",
       "`gates` / `threshold` — gates 必须全 1.0（红线）；scorers 低于阈值记为 scored",
-      "verdict — `passed` / `scored` / `failed`；非 passed 时退出码非 0",
+      "verdict — `passed` 才放行；否则退出码非 0",
       "`cites-policy` / `no-over-promise` — 两个 scorer：是否引用条款 / 是否越权承诺",
-      "`run.output.text` — 打分要取 `.text`；拿整个对象去匹配永远命中不了",
+      "`text` — 打分要取回答正文 `.text`；拿整个对象去匹配永远命中不了",
     ],
     docLinks: [
       { title: "Evals 总览", href: "https://mastra.ai/docs/evals/overview" },
@@ -3010,7 +3010,7 @@ main();`,
     concepts: [
       "`SimpleAuth` — 最简鉴权：把 token（API 访问凭证）与用户的对应关系写在代码里",
       "`Operator` — token 对应的用户类型：id / name / role",
-      "`server.auth` — 鉴权挂在这里；没带 token 的请求会被拒",
+      "`auth`（在 `server` 里）— 没带 token 的请求会被拒",
       "`mastra build` — 打包出上线用的产物 `.mastra/output`（构建前先停 dev）",
       "`mastra start` — 起构建产物；`PORT=4112` 换个端口",
       "`resume-async?runId=` — 凭 runId 从挂起点继续跑（进程换了也能接着跑）",
@@ -3106,7 +3106,7 @@ curl -s http://localhost:4111/api/agents
 curl -s -H "Authorization: Bearer sk-admin-token" http://localhost:4111/api/agents
 
 # ② 先停掉正在跑的 dev（它占着产物目录），再构建
-pnpm exec mastra build
+pnpm exec mastra build        # 产物在 .mastra/output
 
 # 换个端口把产物起起来：出现这两行，说明对外服务的是产物而不是源码
 PORT=4112 pnpm exec mastra start
