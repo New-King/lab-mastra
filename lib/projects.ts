@@ -3010,10 +3010,6 @@ main();`,
     concepts: [
       "`SimpleAuth` — 最简鉴权：把 token（API 访问凭证）与用户的对应关系写在代码里",
       "`Operator` — token 对应的用户类型：id / name / role",
-      "`auth`（在 `server` 里）— 没带 token 的请求会被拒",
-      "`mastra build` — 打包出上线用的产物 `.mastra/output`（构建前先停 dev）",
-      "`mastra start` — 起构建产物；`PORT=4112` 换个端口",
-      "`resume-async?runId=` — 凭 runId 从挂起点继续跑（进程换了也能接着跑）",
     ],
     conceptArticle: {
       title: "延伸阅读：本地 → 线上，存储与观测怎么选",
@@ -3105,24 +3101,24 @@ curl -s http://localhost:4111/api/agents
 # 带上钥匙 → 200 + agent 列表。这就是 token 的作用
 curl -s -H "Authorization: Bearer sk-admin-token" http://localhost:4111/api/agents
 
-# ② 先停掉正在跑的 dev（它占着产物目录），再构建
-pnpm exec mastra build        # 产物在 .mastra/output
+# ② 构建：把源码打成一个可以直接跑的包。先停掉正在跑的 dev（它占着那个目录）
+pnpm exec mastra build        # 打好的包在 .mastra/output —— 上线跑的是它，不是源码
 
-# 换个端口把产物起起来：出现这两行，说明对外服务的是产物而不是源码
+# 起这个包：换个端口（4112）免得跟 dev 的 4111 撞。出现这两行就说明跑起来了
 PORT=4112 pnpm exec mastra start
 #   Mastra API running  http://localhost:4112/api
 #   Studio available   http://localhost:4112
 
-# ③ 在产物进程上发起一个会挂起的流程，记下返回里的 runId
+# ③ 续跑：先发一个会停下来的流程（退货要人审），记下返回里的 runId
 curl -s -X POST "http://localhost:4112/api/workflows/after-sales/start-async" \\
   -H "Authorization: Bearer sk-admin-token" -H "Content-Type: application/json" \\
   -d '{"inputData":{"message":"NX-1007 没拆封，我想退"}}'
 #   {"status":"suspended","runId":"…"}
 
-# 杀掉这个进程（模拟重启 / 进程挂掉）
+# 把这个进程杀掉（模拟重启、进程崩掉）
 pkill -f "mastra start"
 
-# 换另一个进程（4111 的 dev）凭 runId 续跑 —— runId 是查询参数，不是 body
+# 换另一个进程（4111 的 dev）接着把它跑完 —— 状态存在库里，所以换个进程也行
 curl -s -X POST "http://localhost:4111/api/workflows/after-sales/resume-async?runId=<刚才的 runId>" \\
   -H "Authorization: Bearer sk-admin-token" -H "Content-Type: application/json" \\
   -d '{"step":"approval","resumeData":{"approved":true}}'
