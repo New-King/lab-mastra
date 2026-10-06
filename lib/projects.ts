@@ -7,7 +7,7 @@ export type CommandStep = {
   choices?: string[];
 };
 
-export type FileAction = "create" | "replace" | "edit";
+export type FileAction = "create" | "replace" | "edit" | "run";
 
 export type ProjectFile = {
   path: string;
@@ -239,6 +239,7 @@ export function getOrderLabel(order: number) {
 export function getFileActionLabel(action: FileAction) {
   if (action === "replace") return "覆盖";
   if (action === "edit") return "修改";
+  if (action === "run") return "执行";
   return "新建";
 }
 
@@ -3000,20 +3001,22 @@ main();`,
     title: "上线：存储、鉴权与部署",
     menuTitle: "上线",
     summary:
-      "把本地这套搬到线上：换生产存储、给 API 加鉴权、构建产物部署，重启后未跑完的流程还能接着跑。",
+      "不上线也能验的三件事：给 API 加一道门（401 → 200）、构建产物真的能起起来、杀掉进程后没跑完的流程还能接着跑完。",
     verify: {
-      label: "带 token 才能访问",
+      label: "三个本地实验",
       description: [
-        "重新启动 Studio，再用命令行请求一次 API（不带 token 会被拒）",
-        "这是一个加了鉴权的客服服务：只有带 token 的调用才有响应；未跑完的 workflow 在重启后能继续跑完；构建产物在 .mastra/output 下",
+        "① 门：`curl http://localhost:4111/api/agents` 不带 token → `401 {\"error\":\"Invalid or expired token\"}`；加 `-H \"Authorization: Bearer sk-admin-token\"` → `200` 与 agent 列表",
+        "② 产物：停掉 dev 后 `pnpm exec mastra build`，再 `PORT=4112 pnpm exec mastra start` —— 终端出现 `Mastra API running http://localhost:4112/api` 与 `Studio available`，同样是产物在对外服务",
+        "③ 续跑：在 4112 上发起一个会挂起的流程 → `pkill -f \"mastra start\"` 杀掉它 → 用 4111 凭 runId 续跑，最后 `status: success`，`reply` 给出答复",
       ],
     },
     concepts: [
-      "SimpleAuth — 最简鉴权：token 到用户的映射表，适用于开发与内部 API（来自 @mastra/core/server，挂在 server.auth）",
-      "生产鉴权 — 本课代码只做最简的 token 表；对接既有登录体系、细粒度授权见右侧文档",
-      "生产存储 — 上生产把本地库换成托管库：index.ts 里那两行环境变量就是为它预留的（见右侧 Storage）",
-      "构建与产物 — `pnpm exec mastra build` 打包到 `.mastra/output` 后按平台启动（Studio 也能加鉴权后部署，见延伸阅读）",
-      "重启续跑 — workflow 每步快照存于 storage，进程重启后未完成的运行可从断点继续",
+      "`server.auth` + `SimpleAuth` — 给 HTTP 层加一道门：无 token / 错 token 一律 `401 {\"error\":\"Invalid or expired token\"}`，带 `Authorization: Bearer sk-admin-token` 才 `200`（实测）",
+      "这里的 token 是 **API 访问凭证**（钥匙），不是模型 token；加了它以后 Studio 调 API 也要带 header —— 在 Studio 的 Settings 里填",
+      "`tokens` 是「钥匙 → 用户」映射表；示例写死只适合开发与内部 API，生产放环境变量或换 JWT（见右侧「Simple Auth」）",
+      "`mastra build` / `mastra start` — 构建前**必须先停 dev**（它会占用产物目录，不停会被拒）；产物在 `.mastra/output`，`PORT=4112 pnpm exec mastra start` 就能起（实测）",
+      "重启续跑 — 每一步的快照都在 storage 里：进程 A 发起并挂起 → 杀掉 → 进程 B 用 `POST /api/workflows/<id>/resume-async?runId=…` 续跑到 `success`（实测）",
+      "生产存储 — 上生产把本地库换成托管库：`index.ts` 里那两行环境变量就是为它预留的（见右侧 Storage，或知识点右上角延伸阅读）",
     ],
     conceptArticle: {
       title: "延伸阅读：本地 → 线上，存储与观测怎么选",
@@ -3076,11 +3079,11 @@ main();`,
         path: "src/mastra/index.ts",
         order: 1,
         action: "edit",
-        hint: "给服务加鉴权（其余配置不动；生产环境把 token 换成环境变量）",
+        hint: "给 HTTP 层加鉴权（其余配置不动）。这里的 token 是 API 访问凭证、不是模型 token —— 加完 Studio 也要在 Settings 里填 header 才能用",
         code: `// ① 顶部加 import
 import { SimpleAuth } from "@mastra/core/server";
 
-// ② 定义一个操作员类型，token 从哪里来由你决定（示例写死，生产放环境变量）
+// ② 定义操作员类型：token → 用户（示例写死，生产放环境变量或换 JWT）
 type Operator = { id: string; name: string; role: "admin" | "agent" };
 
 // ③ 在 new Mastra({ ... }) 里加 server 一项
@@ -3092,6 +3095,41 @@ server: {
     },
   }),
 },
+`,
+      },
+      {
+        path: "终端",
+        order: 2,
+        action: "run",
+        hint: "两个本地实验：② 构建产物并起起来（前提是先停 dev）③ 杀掉进程后凭 runId 在另一个进程里续跑。三条命令的真实输出都写在注释里",
+        code: `# ① 门关上了吗：不带 token → 401（Invalid or expired token）
+curl -s http://localhost:4111/api/agents
+
+# 带上钥匙 → 200 + agent 列表。这就是 token 的作用
+curl -s -H "Authorization: Bearer sk-admin-token" http://localhost:4111/api/agents
+
+# ② 先停掉正在跑的 dev（它占着产物目录），再构建
+pnpm exec mastra build
+
+# 换个端口把产物起起来：出现这两行，说明对外服务的是产物而不是源码
+PORT=4112 pnpm exec mastra start
+#   Mastra API running  http://localhost:4112/api
+#   Studio available   http://localhost:4112
+
+# ③ 在产物进程上发起一个会挂起的流程，记下返回里的 runId
+curl -s -X POST "http://localhost:4112/api/workflows/after-sales/start-async" \\
+  -H "Authorization: Bearer sk-admin-token" -H "Content-Type: application/json" \\
+  -d '{"inputData":{"message":"NX-1007 没拆封，我想退"}}'
+#   {"status":"suspended","runId":"…"}
+
+# 杀掉这个进程（模拟重启 / 进程挂掉）
+pkill -f "mastra start"
+
+# 换另一个进程（4111 的 dev）凭 runId 续跑 —— runId 是查询参数，不是 body
+curl -s -X POST "http://localhost:4111/api/workflows/after-sales/resume-async?runId=<刚才的 runId>" \\
+  -H "Authorization: Bearer sk-admin-token" -H "Content-Type: application/json" \\
+  -d '{"step":"approval","resumeData":{"approved":true}}'
+#   status: success —— classify / lookup-order / judge / approval / reply 全 success
 `,
       },
     ],
