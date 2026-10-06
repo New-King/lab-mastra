@@ -3072,7 +3072,7 @@ main();`,
         path: "src/mastra/index.ts",
         order: 1,
         action: "edit",
-        hint: "给 HTTP 层加鉴权（其余配置不动）。这里的 token 是 API 访问凭证、不是模型 token —— 加完 Studio 也要在 Settings 里填 header 才能用",
+        hint: "给 HTTP 层加一道门（其余配置不动）。注意两点：① 这道门挡的是所有 API 调用 —— Studio、curl、应用走 HTTP 时都算，本地 Studio 默认只监听 localhost，别人本来就访问不到，所以这一步只为看清门是干什么的（看完 401/200 可以留着，也可以撤掉）；② 这里的 token 是 API 访问凭证、不是模型 token",
         code: `// ① 顶部加 import
 import { SimpleAuth } from "@mastra/core/server";
 
